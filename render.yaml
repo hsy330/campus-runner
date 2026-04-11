@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: campus-runner
+    runtime: node
+    plan: free
+    buildCommand: cd campus-runner-web && npm install && npx vite build && cd ../campus-runner-server && npm install
+    startCommand: cd campus-runner-server && node src/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="/admin/styles.css">
+  </head>
+  <body>
+    <div class="shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Campus Runner Admin</p>
+          <h1>内容治理后台</h1>
+          <p class="hero-copy">登录后可管理敏感词、巡检自动审核结果、删除不合规任务，并处理申诉工单。</p>
+        </div>
+        <div class="hero-actions">
+          <div id="adminIdentity" class="hero-identity"></div>
+          <button id="refreshButton" class="primary-button" type="button">刷新数据</button>
+          <button id="logoutButton" class="ghost-button" type="button">退出登录</button>
+        </div>
+      </header>
+
+      <main class="grid">
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>自动审核敏感词</h2>
+              <p>发布时命中以下敏感词会被直接拦截。</p>
+            </div>
+          </div>
+          <div class="toolbar">
+            <input id="newWordInput" class="text-input" type="text" placeholder="输入敏感词，例如联系方式">
+            <button id="addWordButton" class="primary-button" type="button">新增敏感词</button>
+          </div>
+          <div id="wordList" class="chip-list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>任务审核日志</h2>
+              <p>自动审核通过后会记录在此，管理员可继续人工巡检并删除任务。</p>
+            </div>
+          </div>
+          <div id="logList" class="stack-list"></div>
+        </section>
+
+        <section class="panel panel-span-2">
+          <div class="panel-head">
+            <div>
+              <h2>申诉工单</h2>
+              <p>处理发布者与接单者之间的争议记录。</p>
+            </div>
+          </div>
+          <div id="appealList" class="stack-list"></div>
+        </section>
+      </main>
+    </div>
+    <script src="/admin/dashboard.js"></script>
+  </body>
+</html>

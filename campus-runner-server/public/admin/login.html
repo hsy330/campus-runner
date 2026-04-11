@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Admin Login</title>
+    <link rel="stylesheet" href="/admin/styles.css">
+  </head>
+  <body>
+    <div class="shell">
+      <section class="login-panel">
+        <div class="login-card">
+          <p class="eyebrow eyebrow-dark">Campus Runner Admin</p>
+          <h1>管理后台登录</h1>
+          <p class="login-copy">请先完成管理员登录，登录成功后再进入管理后台操作。</p>
+          <div class="login-form">
+            <input id="usernameInput" class="text-input" type="text" placeholder="管理员账号">
+            <input id="passwordInput" class="text-input" type="password" placeholder="管理员密码">
+            <button id="loginButton" class="primary-button" type="button">登录后台</button>
+          </div>
+          <p class="login-tip">默认账号：admin，默认密码：admin123</p>
+        </div>
+      </section>
+    </div>
+    <script src="/admin/auth.js"></script>
+    <script src="/admin/login.js"></script>
+  </body>
+</html>

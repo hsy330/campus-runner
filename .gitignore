@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.env
+*.log
+cloudflared.log
+server.err.log
+server.out.log
+preview-http.err.log
+preview-http.out.log
+campus-runner-server/server-dev.log
+.DS_Store
+Thumbs.db
+tools/cloudflared.exe
+campus-runner-web/node_modules/
+campus-runner-server/node_modules/
