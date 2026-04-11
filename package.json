@@ -1,0 +1,12 @@
+{
+  "name": "campus-runner",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "cd campus-runner-web && npm install && npm run build && cd ../campus-runner-server && npm install",
+    "start": "cd campus-runner-server && node src/server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -201,6 +201,9 @@ export async function updateTaskStatus(userId, taskId, nextStatus) {
   }
 
   task.status = nextStatus;
+  if (nextStatus === 'confirming') {
+    task.confirmingAt = new Date().toISOString();
+  }
   await updateTaskRecord(taskId, task);
   await updateOrdersByTaskId(taskId, {
     status: nextStatus,
@@ -211,12 +214,15 @@ export async function updateTaskStatus(userId, taskId, nextStatus) {
     const runner = await findUserById(task.runnerId);
     if (runner) {
       runner.wallet += task.price;
-      await updateUser(runner.id, { wallet: runner.wallet });
+      runner.completedCount = (runner.completedCount || 0) + 1;
+      await updateUser(runner.id, { wallet: runner.wallet, completedCount: runner.completedCount });
       await createWalletFlow(runner.id, '任务完成收入', 'income', task.price, runner.wallet);
     }
 
     const publisher = await findUserById(task.publisherId);
     if (publisher) {
+      publisher.completedCount = (publisher.completedCount || 0) + 1;
+      await updateUser(publisher.id, { completedCount: publisher.completedCount });
       await createWalletFlow(publisher.id, '任务完成扣款结算', 'expense', 0, publisher.wallet);
     }
   }

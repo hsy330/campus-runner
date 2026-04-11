@@ -2,19 +2,31 @@ import { env } from '../config/env.js';
 
 const CAMPUS_POI_MAP = {
   '东方红校区': {
-    city: '湘潭',
-    center: { latitude: 27.8295, longitude: 112.9298 },
+    city: '长沙',
+    center: { latitude: 28.1885, longitude: 112.8688 },
     pois: [
-      { title: '东门菜鸟驿站', address: '东方红校区东门快递服务点', latitude: 27.8299, longitude: 112.9272 },
-      { title: '6 栋宿舍楼', address: '东方红校区学生宿舍 6 栋', latitude: 27.8279, longitude: 112.9310 },
-      { title: '图书馆一楼大厅', address: '东方红校区图书馆主入口', latitude: 27.8302, longitude: 112.9321 },
-      { title: '一食堂奶茶店', address: '东方红校区第一食堂奶茶档口', latitude: 27.8288, longitude: 112.9294 },
-      { title: '第二食堂', address: '东方红校区第二食堂', latitude: 27.8281, longitude: 112.9304 },
-      { title: '体育馆西门', address: '东方红校区体育馆西侧入口', latitude: 27.8314, longitude: 112.9284 },
-      { title: '主教学楼 A 栋', address: '东方红校区教学区 A 栋', latitude: 27.8308, longitude: 112.9301 },
-      { title: '主教学楼 B 栋', address: '东方红校区教学区 B 栋', latitude: 27.8311, longitude: 112.9313 },
-      { title: '南门公交站', address: '东方红校区南门公交站台', latitude: 27.8269, longitude: 112.9306 },
-      { title: '北门打印店', address: '东方红校区北门打印复印店', latitude: 27.8324, longitude: 112.9292 }
+      { title: '东门菜鸟驿站', address: '东方红校区东门快递服务中心', latitude: 28.1899, longitude: 112.8672 },
+      { title: '6栋宿舍楼', address: '东方红校区学生宿舍6栋', latitude: 28.1879, longitude: 112.8710 },
+      { title: '图书馆一楼大厅', address: '东方红校区图书馆主入口', latitude: 28.1902, longitude: 112.8721 },
+      { title: '一食堂奶茶店', address: '东方红校区第一食堂', latitude: 28.1888, longitude: 112.8694 },
+      { title: '第二食堂', address: '东方红校区第二食堂', latitude: 28.1881, longitude: 112.8704 },
+      { title: '体育馆西门', address: '东方红校区体育馆西侧入口', latitude: 28.1914, longitude: 112.8684 },
+      { title: '主教学楼A栋', address: '东方红校区教学区A栋', latitude: 28.1908, longitude: 112.8701 },
+      { title: '主教学楼B栋', address: '东方红校区教学区B栋', latitude: 28.1911, longitude: 112.8713 },
+      { title: '南门公交站', address: '东方红校区南门公交站台', latitude: 28.1869, longitude: 112.8706 },
+      { title: '北门打印店', address: '东方红校区北门打印复印店', latitude: 28.1924, longitude: 112.8692 },
+      { title: '校内超市', address: '东方红校区校内生活超市', latitude: 28.1893, longitude: 112.8698 },
+      { title: '操场', address: '东方红校区田径运动场', latitude: 28.1905, longitude: 112.8665 }
+    ]
+  },
+  '城南校区': {
+    city: '长沙',
+    center: { latitude: 28.1785, longitude: 112.9608 },
+    pois: [
+      { title: '城南校区南门', address: '城南校区正门', latitude: 28.1780, longitude: 112.9600 },
+      { title: '教学楼', address: '城南校区主教学楼', latitude: 28.1790, longitude: 112.9615 },
+      { title: '学生宿舍', address: '城南校区学生公寓', latitude: 28.1775, longitude: 112.9620 },
+      { title: '食堂', address: '城南校区学生食堂', latitude: 28.1795, longitude: 112.9610 }
     ]
   }
 };

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { getProfileBundle, rechargeWallet, withdrawWallet } from '../lib/api.js';
+import { getProfileBundle, rechargeWallet, withdrawWallet, getUserReviews } from '../lib/api.js';
 import { useAuth } from '../auth.jsx';
 
 export function ProfilePage() {
@@ -9,13 +9,20 @@ export function ProfilePage() {
   const navigate = useNavigate();
   const [bundle, setBundle] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [walletModal, setWalletModal] = useState(null); // 'recharge' | 'withdraw' | null
+  const [walletModal, setWalletModal] = useState(null);
   const [walletAmount, setWalletAmount] = useState('');
   const [walletLoading, setWalletLoading] = useState(false);
+  const [reviews, setReviews] = useState([]);
 
   function reloadBundle() {
     getProfileBundle(token)
-      .then((data) => setBundle(data))
+      .then((data) => {
+        setBundle(data);
+        if (data?.profile) updateUser({ ...user, ...data.profile });
+      })
+      .catch(() => {});
+    getUserReviews(user?.id)
+      .then((data) => setReviews(Array.isArray(data) ? data : []))
       .catch(() => {});
   }
 
@@ -25,8 +32,15 @@ export function ProfilePage() {
       .then((data) => { if (active) setBundle(data); })
       .catch(() => {})
       .finally(() => { if (active) setLoading(false); });
+
+    if (user?.id) {
+      getUserReviews(user.id)
+        .then((data) => { if (active) setReviews(Array.isArray(data) ? data : []); })
+        .catch(() => {});
+    }
+
     return () => { active = false; };
-  }, [token]);
+  }, [token, user?.id]);
 
   async function handleWalletAction() {
     const amount = Number(walletAmount);
@@ -86,6 +100,25 @@ export function ProfilePage() {
           <span className="subtle">信用分</span>
         </div>
       </div>
+
+      {/* 评价记录 */}
+      {reviews.length > 0 && (
+        <section className="profile-section">
+          <h3>收到的评价 ({reviews.length})</h3>
+          {reviews.map((r) => (
+            <div key={r.id} className="flow-row">
+              <div style={{ flex: 1 }}>
+                <p className="flow-title">
+                  {r.fromNickname || '匿名'}
+                  <span style={{ color: '#f59e0b', marginLeft: 8 }}>{'★'.repeat(Math.round(r.average || 0))}</span>
+                </p>
+                {r.comment && <p className="subtle">{r.comment}</p>}
+                <p className="subtle">{new Date(r.createdAt).toLocaleDateString()}</p>
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
 
       {bundle?.publishedTasks?.length > 0 && (
         <section className="profile-section">

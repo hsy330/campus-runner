@@ -54,13 +54,13 @@ export const db = {
       pickupText: '东门菜鸟驿站',
       deliveryText: '6 栋宿舍楼',
       pickupLocation: {
-        latitude: 27.8299,
-        longitude: 112.9272,
+        latitude: 28.1899,
+        longitude: 112.8672,
         name: '东门菜鸟驿站'
       },
       deliveryLocation: {
-        latitude: 27.8279,
-        longitude: 112.931,
+        latitude: 28.1879,
+        longitude: 112.8710,
         name: '6 栋宿舍楼'
       },
       deadlineText: '今天 18:30 前',
@@ -82,13 +82,13 @@ export const db = {
       pickupText: '一食堂奶茶店',
       deliveryText: '图书馆一楼大厅',
       pickupLocation: {
-        latitude: 27.8288,
-        longitude: 112.9294,
+        latitude: 28.1888,
+        longitude: 112.8694,
         name: '一食堂奶茶店'
       },
       deliveryLocation: {
-        latitude: 27.8302,
-        longitude: 112.9321,
+        latitude: 28.1902,
+        longitude: 112.8721,
         name: '图书馆一楼大厅'
       },
       deadlineText: '今晚 20:00 前',
@@ -159,7 +159,9 @@ export const db = {
   sensitiveWords: ['微信', '手机号', '加V', '兼职刷单', '违禁品'],
   withdrawRequests: [],
   reviews: [],
-  appeals: []
+  appeals: [],
+  chatMessages: [],
+  chatRooms: []
 };
 
 export function generateId(prefix) {

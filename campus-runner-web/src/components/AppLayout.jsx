@@ -22,6 +22,7 @@ export function AppLayout({ children }) {
             <NavLink to="/" end>大厅</NavLink>
             <NavLink to="/publish">发布</NavLink>
             <NavLink to="/orders">订单</NavLink>
+            <NavLink to="/chat">消息</NavLink>
             <NavLink to="/profile">我的</NavLink>
           </div>
           <div className="app-header-right">

@@ -82,3 +82,76 @@ export function rechargeWallet(token, amount) {
 export function withdrawWallet(token, amount) {
   return request('/wallet/withdraw', { method: 'POST', token, data: { amount } });
 }
+
+export function searchPlaces(keyword, campus) {
+  const query = new URLSearchParams({ keyword, campus, limit: 8 });
+  return request(`/map/suggestions?${query}`);
+}
+
+export function getRouteSummary(from, to) {
+  return request('/map/route', { method: 'POST', data: { from, to } });
+}
+
+export function listChatRooms(token) {
+  return request('/chat/rooms', { token });
+}
+
+export function createChatRoom(token, taskId) {
+  return request('/chat/rooms', { method: 'POST', token, data: { taskId } });
+}
+
+export function listChatMessages(token, roomId) {
+  return request(`/chat/rooms/${roomId}/messages`, { token });
+}
+
+export function sendChatMessage(token, roomId, content, type = 'text') {
+  return request(`/chat/rooms/${roomId}/messages`, { method: 'POST', token, data: { content, type } });
+}
+
+export function adminLogin(username, password) {
+  return request('/admin/login', { method: 'POST', data: { username, password } });
+}
+
+export function listSensitiveWords(token) {
+  return request('/admin/sensitive-words', { token });
+}
+
+export function addSensitiveWord(token, word) {
+  return request('/admin/sensitive-words', { method: 'POST', token, data: { word } });
+}
+
+export function removeSensitiveWord(token, word) {
+  return request('/admin/sensitive-words/remove', { method: 'POST', token, data: { word } });
+}
+
+export function listModerationLogs(token) {
+  return request('/admin/moderation', { token });
+}
+
+export function listAdminAppeals(token) {
+  return request('/admin/appeals', { token });
+}
+
+export function handleAppeal(token, appealId, action) {
+  return request(`/admin/appeals/${appealId}/${action}`, { method: 'POST', token });
+}
+
+export function getBlacklist(token) {
+  return request('/blacklist', { token });
+}
+
+export function addToBlacklist(token, userId) {
+  return request('/blacklist/add', { method: 'POST', token, data: { userId } });
+}
+
+export function removeFromBlacklist(token, userId) {
+  return request('/blacklist/remove', { method: 'POST', token, data: { userId } });
+}
+
+export function sendTip(token, toUserId, amount) {
+  return request('/tip', { method: 'POST', token, data: { toUserId, amount } });
+}
+
+export function getUserReviews(userId) {
+  return request(`/users/${userId}/reviews`);
+}
