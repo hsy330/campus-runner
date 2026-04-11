@@ -1,9 +1,8 @@
 {
-  "version": 2,
   "buildCommand": "cd campus-runner-web && npm install && npm run build && cd ../campus-runner-server && npm install",
   "outputDirectory": "campus-runner-web/dist",
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index.js" },
+    { "source": "/api/:path*", "destination": "/api/index.js" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "functions": {
