@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/index.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "campus-runner-web/dist/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/index.js" },
+    { "src": "/assets/(.*)", "dest": "/campus-runner-web/dist/assets/$1" },
+    { "src": "/(.*\\.(js|css|svg|png|ico|json|html))", "dest": "/campus-runner-web/dist/$1" },
+    { "src": "/(.*)", "dest": "/campus-runner-web/dist/index.html" }
+  ]
+}

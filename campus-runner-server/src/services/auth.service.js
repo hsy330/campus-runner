@@ -96,7 +96,7 @@ export async function registerWithPassword(payload) {
     studentNo: '',
     rating: 0,
     completedCount: 0,
-    wallet: 30,
+    wallet: 0,
     score: 100,
     openid: '',
     createdAt: new Date().toISOString()
