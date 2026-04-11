@@ -155,3 +155,62 @@ export function sendTip(token, toUserId, amount) {
 export function getUserReviews(userId) {
   return request(`/users/${userId}/reviews`);
 }
+
+/* ── Admin Extended APIs ── */
+
+export function verifyAdminSession(token) {
+  return request('/admin/session', { token });
+}
+
+export function getAdminStats(token) {
+  return request('/admin/stats', { token });
+}
+
+export function listAdminUsers(token, keyword = '', page = 1, pageSize = 20) {
+  const query = new URLSearchParams({ keyword, page, pageSize });
+  return request(`/admin/users?${query}`, { token });
+}
+
+export function banUser(token, userId) {
+  return request(`/admin/users/${userId}/ban`, { method: 'POST', token });
+}
+
+export function unbanUser(token, userId) {
+  return request(`/admin/users/${userId}/unban`, { method: 'POST', token });
+}
+
+export function listAdminTasks(token, status = 'all', keyword = '', page = 1, pageSize = 20) {
+  const query = new URLSearchParams({ status, keyword, page, pageSize });
+  return request(`/admin/tasks?${query}`, { token });
+}
+
+export function approveTask(token, taskId) {
+  return request(`/admin/tasks/${taskId}/approve`, { method: 'POST', token });
+}
+
+export function removeTask(token, taskId) {
+  return request(`/admin/tasks/${taskId}/remove`, { method: 'POST', token });
+}
+
+export function listAdminOrders(token, page = 1, pageSize = 20) {
+  const query = new URLSearchParams({ page, pageSize });
+  return request(`/admin/orders?${query}`, { token });
+}
+
+export function listAdminWalletFlows(token, page = 1, pageSize = 20) {
+  const query = new URLSearchParams({ page, pageSize });
+  return request(`/admin/wallet/flows?${query}`, { token });
+}
+
+export function listAdminWithdrawals(token, page = 1, pageSize = 20) {
+  const query = new URLSearchParams({ page, pageSize });
+  return request(`/admin/withdrawals?${query}`, { token });
+}
+
+export function approveWithdrawal(token, withdrawalId) {
+  return request(`/admin/withdrawals/${withdrawalId}/approve`, { method: 'POST', token });
+}
+
+export function rejectWithdrawal(token, withdrawalId) {
+  return request(`/admin/withdrawals/${withdrawalId}/reject`, { method: 'POST', token });
+}
