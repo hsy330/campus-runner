@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { BadgeCheck, Star, Wallet } from 'lucide-react';
 
-import { getProfileBundle, rechargeWallet, withdrawWallet, getUserReviews } from '../lib/api.js';
+import { UserAvatar } from '../components/UserAvatar.jsx';
 import { useAuth } from '../auth.jsx';
+import { formatAmount } from '../lib/format.js';
+import { getProfileBundle, rechargeWallet, updateProfile, withdrawWallet } from '../lib/api.js';
 
 export function ProfilePage() {
   const { token, user, logout, updateUser } = useAuth();
@@ -12,7 +15,7 @@ export function ProfilePage() {
   const [walletModal, setWalletModal] = useState(null);
   const [walletAmount, setWalletAmount] = useState('');
   const [walletLoading, setWalletLoading] = useState(false);
-  const [reviews, setReviews] = useState([]);
+  const [avatarUploading, setAvatarUploading] = useState(false);
 
   function reloadBundle() {
     getProfileBundle(token)
@@ -21,26 +24,21 @@ export function ProfilePage() {
         if (data?.profile) updateUser({ ...user, ...data.profile });
       })
       .catch(() => {});
-    getUserReviews(user?.id)
-      .then((data) => setReviews(Array.isArray(data) ? data : []))
-      .catch(() => {});
   }
 
   useEffect(() => {
     let active = true;
     getProfileBundle(token)
-      .then((data) => { if (active) setBundle(data); })
+      .then((data) => {
+        if (!active) return;
+        setBundle(data);
+        if (data?.profile) updateUser({ ...user, ...data.profile });
+      })
       .catch(() => {})
       .finally(() => { if (active) setLoading(false); });
 
-    if (user?.id) {
-      getUserReviews(user.id)
-        .then((data) => { if (active) setReviews(Array.isArray(data) ? data : []); })
-        .catch(() => {});
-    }
-
     return () => { active = false; };
-  }, [token, user?.id]);
+  }, [token]);
 
   async function handleWalletAction() {
     const amount = Number(walletAmount);
@@ -71,24 +69,55 @@ export function ProfilePage() {
     navigate('/login', { replace: true });
   }
 
+  async function handleAvatarChange(event) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async (loadEvent) => {
+      try {
+        setAvatarUploading(true);
+        const nextUser = await updateProfile(token, { avatar: loadEvent.target?.result || '' });
+        updateUser({ ...user, ...nextUser });
+        reloadBundle();
+      } catch (error) {
+        alert(error.message || '头像更新失败');
+      } finally {
+        setAvatarUploading(false);
+      }
+    };
+    reader.readAsDataURL(file);
+    event.target.value = '';
+  }
+
   if (loading) return <div className="page"><p className="page-loading">加载中...</p></div>;
 
   const profile = bundle?.profile || user;
   const flows = bundle?.walletFlows || [];
+  const reviews = bundle?.receivedReviews || [];
 
   return (
     <div className="page profile-page">
       <div className="profile-hero">
-        <div className="profile-avatar">{(profile?.nickname || '?')[0]}</div>
+        <label className="profile-avatar profile-avatar--editable">
+          <UserAvatar src={profile?.avatar} name={profile?.username} size="lg" className="profile-avatar__inner" />
+          <input type="file" accept="image/*" hidden onChange={handleAvatarChange} />
+          <span className="profile-avatar-hint">{avatarUploading ? '上传中...' : '更换头像'}</span>
+        </label>
         <div>
-          <h2>{profile?.nickname || '未知用户'}</h2>
-          <p className="subtle">{profile?.campus} · 好评 {profile?.rating || 0} · 完成 {profile?.completedCount || 0} 单</p>
+          <h2>{profile?.username || '未知用户'}</h2>
+          <p className="subtle profile-hero-meta">
+            <span><BadgeCheck size={14} /> {profile?.campus}</span>
+            <span><Star size={14} /> 好评 {profile?.rating || 0}</span>
+            <span><Wallet size={14} /> 完成 {profile?.completedCount || 0} 单</span>
+          </p>
         </div>
       </div>
 
       <div className="profile-grid">
         <div className="profile-stat">
-          <span className="stat-num">{profile?.wallet || 0}</span>
+          <span className="stat-num">{formatAmount(profile?.wallet || 0)}</span>
           <span className="subtle">钱包积分</span>
           <div className="wallet-actions">
             <button className="btn-sm btn-recharge" onClick={() => setWalletModal('recharge')}>充值</button>
@@ -107,13 +136,16 @@ export function ProfilePage() {
           <h3>收到的评价 ({reviews.length})</h3>
           {reviews.map((r) => (
             <div key={r.id} className="flow-row">
-              <div style={{ flex: 1 }}>
-                <p className="flow-title">
-                  {r.fromNickname || '匿名'}
-                  <span style={{ color: '#f59e0b', marginLeft: 8 }}>{'★'.repeat(Math.round(r.average || 0))}</span>
-                </p>
-                {r.comment && <p className="subtle">{r.comment}</p>}
-                <p className="subtle">{new Date(r.createdAt).toLocaleDateString()}</p>
+              <div className="flow-user-meta">
+                <UserAvatar src={r.fromUserAvatar} name={r.fromUserName} size="sm" />
+                <div style={{ flex: 1 }}>
+                  <p className="flow-title">
+                    {r.fromUserName || '匿名'}
+                    <span style={{ color: '#f59e0b', marginLeft: 8 }}>{'★'.repeat(Math.round(r.average || 0))}</span>
+                  </p>
+                  {r.comment && <p className="subtle">{r.comment}</p>}
+                  <p className="subtle">{new Date(r.createdAt).toLocaleDateString()}</p>
+                </div>
               </div>
             </div>
           ))}
@@ -129,7 +161,7 @@ export function ProfilePage() {
                 <p className="flow-title">{t.title}</p>
                 <p className="subtle">状态：{t.status === 'open' ? '待接单' : t.status}</p>
               </div>
-              <span className="flow-amount">{t.price} 积分</span>
+              <span className="flow-amount">{formatAmount(t.price)} 积分</span>
             </div>
           ))}
         </section>
@@ -145,7 +177,7 @@ export function ProfilePage() {
                 <p className="subtle">{new Date(f.createdAt).toLocaleString()}</p>
               </div>
               <span className={`flow-amount ${f.amount >= 0 ? 'positive' : 'negative'}`}>
-                {f.amount >= 0 ? '+' : ''}{f.amount}
+                {f.amount >= 0 ? '+' : ''}{formatAmount(f.amount)}
               </span>
             </div>
           ))}
@@ -161,13 +193,14 @@ export function ProfilePage() {
         <div className="modal-overlay" onClick={() => setWalletModal(null)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <h3>{walletModal === 'recharge' ? '充值积分' : '提现申请'}</h3>
-            <p className="subtle">当前余额：{profile?.wallet || 0} 积分</p>
+            <p className="subtle">当前余额：{formatAmount(profile?.wallet || 0)} 积分</p>
             <input
               type="number"
               placeholder="请输入积分数量"
               value={walletAmount}
               onChange={(e) => setWalletAmount(e.target.value)}
-              min={1}
+              min={0.01}
+              step={0.01}
             />
             <div className="modal-actions">
               <button className="btn-ghost" onClick={() => setWalletModal(null)}>取消</button>

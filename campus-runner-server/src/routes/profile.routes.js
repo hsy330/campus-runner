@@ -3,7 +3,8 @@ import express from 'express';
 import {
   createRecharge,
   createWithdrawRequest,
-  getProfileBundle
+  getProfileBundle,
+  getPublicProfile
 } from '../services/profile.service.js';
 import { requireUser } from '../services/auth.service.js';
 
@@ -13,6 +14,19 @@ router.get('/profile/bundle', async (req, res, next) => {
   try {
     const user = await requireUser(req);
     res.json({ data: await getProfileBundle(user.id) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/profile/:userId', async (req, res, next) => {
+  try {
+    const data = await getPublicProfile(req.params.userId);
+    if (!data) {
+      res.status(404).json({ message: '用户不存在' });
+      return;
+    }
+    res.json({ data });
   } catch (error) {
     next(error);
   }

@@ -1,8 +1,9 @@
 import crypto from 'crypto';
 
-import { generateId } from '../data/store.js';
+import { db, generateId } from '../data/store.js';
 import { createUser, findUserById, findUserByUsername, updateUser } from '../repositories/user.repository.js';
 import { deleteSession, getSession, setSession } from '../lib/session-store.js';
+import { saveSnapshot } from '../lib/file-persist.js';
 
 const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
 const PASSWORD_SALT_BYTES = 16;
@@ -27,7 +28,6 @@ function sanitizeUser(user) {
   return {
     id: user.id,
     username: user.username || '',
-    nickname: user.nickname,
     avatar: user.avatar,
     campus: user.campus,
     verified: user.verified,
@@ -54,7 +54,6 @@ async function createLoginSession(user) {
 
 export async function registerWithPassword(payload) {
   const username = String(payload.username || '').trim();
-  const nickname = String(payload.nickname || '').trim();
   const campus = String(payload.campus || '').trim();
   const password = String(payload.password || '');
   const confirmPassword = String(payload.confirmPassword || '');
@@ -64,9 +63,6 @@ export async function registerWithPassword(payload) {
   }
   if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
     throw new Error('用户名需为 3-20 位字母、数字或下划线');
-  }
-  if (!nickname) {
-    throw new Error('请输入昵称');
   }
   if (!campus) {
     throw new Error('请选择校区');
@@ -87,7 +83,7 @@ export async function registerWithPassword(payload) {
     id: generateId('u'),
     username,
     passwordHash: hashPassword(password),
-    nickname,
+    nickname: '',
     avatar: '',
     campus,
     verified: false,
@@ -101,6 +97,7 @@ export async function registerWithPassword(payload) {
     openid: '',
     createdAt: new Date().toISOString()
   });
+  await saveSnapshot(db);
 
   const token = await createLoginSession(user);
   return {
@@ -171,6 +168,7 @@ export async function updateUserProfile(userId, data) {
   delete patch.password;
   delete patch.passwordHash;
   delete patch.username;
+  delete patch.nickname;
 
   if (Object.prototype.hasOwnProperty.call(patch, 'campus')) {
     patch.campus = String(patch.campus || '').trim();
@@ -179,11 +177,8 @@ export async function updateUserProfile(userId, data) {
     }
   }
 
-  if (Object.prototype.hasOwnProperty.call(patch, 'nickname')) {
-    patch.nickname = String(patch.nickname || '').trim();
-    if (!patch.nickname) {
-      throw new Error('昵称不能为空');
-    }
+  if (Object.prototype.hasOwnProperty.call(patch, 'avatar')) {
+    patch.avatar = String(patch.avatar || '').trim();
   }
 
   if (Object.prototype.hasOwnProperty.call(patch, 'realName') || Object.prototype.hasOwnProperty.call(patch, 'studentNo')) {
@@ -191,5 +186,7 @@ export async function updateUserProfile(userId, data) {
     patch.verified = false;
   }
 
-  return updateUser(userId, patch);
+  const updated = await updateUser(userId, patch);
+  await saveSnapshot(db);
+  return updated;
 }

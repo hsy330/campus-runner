@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { BarChart3, CircleDollarSign } from 'lucide-react';
 
+import { UserAvatar } from '../components/UserAvatar.jsx';
+import { formatAmount } from '../lib/format.js';
 import {
   adminLogin,
   verifyAdminSession,
@@ -21,7 +24,8 @@ import {
   removeSensitiveWord,
   listModerationLogs,
   listAdminAppeals,
-  handleAppeal
+  handleAppeal,
+  settleAppeal
 } from '../lib/api.js';
 
 const ADMIN_TOKEN_KEY = 'campus_runner_admin_token';
@@ -196,7 +200,8 @@ function OverviewPanel({ token }) {
     { label: '总订单数', value: stats.totalOrders, color: '#8b5cf6', bg: '#f5f3ff' },
     { label: '待处理申诉', value: stats.pendingAppeals, color: '#ef4444', bg: '#fef2f2' },
     { label: '待审核提现', value: stats.pendingWithdrawals, color: '#f97316', bg: '#fff7ed' },
-    { label: '累计交易额', value: `${stats.totalRevenue} 积分`, color: '#059669', bg: '#ecfdf5' },
+    { label: '累计冻结额', value: `${formatAmount(stats.totalRevenue)} 积分`, color: '#059669', bg: '#ecfdf5' },
+    { label: '累计成交额', value: `${formatAmount(stats.totalTurnover)} 积分`, color: '#0f766e', bg: '#ecfeff' },
     { label: '今日新增任务', value: stats.todayTasks, color: '#2563eb', bg: '#eff6ff' },
     { label: '今日新增用户', value: stats.todayUsers, color: '#7c3aed', bg: '#f5f3ff' }
   ];
@@ -210,6 +215,50 @@ function OverviewPanel({ token }) {
             <span className="admin-stat-label">{c.label}</span>
           </div>
         ))}
+      </div>
+      <div className="admin-chart-grid">
+        <section className="admin-chart-card">
+          <div className="admin-chart-head">
+            <h3><BarChart3 size={18} /> 近 7 日成交趋势</h3>
+            <span className="subtle">均单价 {formatAmount(stats.averageOrderAmount)} 积分</span>
+          </div>
+          <div className="admin-bar-list">
+            {(stats.recentTurnover || []).map((item) => (
+              <div key={item.date} className="admin-bar-item">
+                <div className="admin-bar-label">
+                  <span>{item.label}</span>
+                  <span>{item.count} 单</span>
+                </div>
+                <div className="admin-bar-track">
+                  <div
+                    className="admin-bar-fill"
+                    style={{ width: `${Math.max(10, ((item.amount || 0) / Math.max(...(stats.recentTurnover || [{ amount: 1 }]).map((entry) => entry.amount || 1))) * 100)}%` }}
+                  />
+                </div>
+                <div className="admin-bar-value">{formatAmount(item.amount)} 积分</div>
+              </div>
+            ))}
+          </div>
+        </section>
+        <section className="admin-chart-card">
+          <div className="admin-chart-head">
+            <h3><CircleDollarSign size={18} /> 业务结构</h3>
+            <span className="subtle">任务类型与校区分布</span>
+          </div>
+          <div className="admin-tag-metrics">
+            {(stats.categoryStats || []).map((item) => (
+              <span key={item.name} className="admin-metric-tag">{item.name} {item.value}</span>
+            ))}
+          </div>
+          <div className="admin-campus-list">
+            {(stats.campusStats || []).map((item) => (
+              <div key={item.name} className="admin-campus-item">
+                <span>{item.name}</span>
+                <strong>{item.value}</strong>
+              </div>
+            ))}
+          </div>
+        </section>
       </div>
     </div>
   );
@@ -253,7 +302,7 @@ function UsersPanel({ token }) {
     <div className="admin-table-panel">
       <div className="admin-toolbar">
         <div className="admin-search-bar">
-          <input type="text" placeholder="搜索用户名/昵称..." value={keyword} onChange={(e) => setKeyword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} />
+          <input type="text" placeholder="搜索用户名/ID..." value={keyword} onChange={(e) => setKeyword(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} />
           <button className="btn-primary btn-sm" onClick={handleSearch}>搜索</button>
         </div>
         <span className="admin-toolbar-info">共 {total} 个用户</span>
@@ -264,7 +313,7 @@ function UsersPanel({ token }) {
             <thead>
               <tr>
                 <th>ID</th>
-                <th>昵称</th>
+                <th>用户</th>
                 <th>校区</th>
                 <th>评分</th>
                 <th>完成数</th>
@@ -280,17 +329,17 @@ function UsersPanel({ token }) {
                   <td className="admin-td-id">{u.id}</td>
                   <td>
                     <div className="admin-user-cell">
-                      <div className="admin-user-cell-avatar">{(u.nickname || '?')[0]}</div>
+                      <UserAvatar src={u.avatar} name={u.username} size="sm" className="admin-user-cell-avatar" />
                       <div>
-                        <div className="admin-user-cell-name">{u.nickname}</div>
-                        <div className="admin-user-cell-sub">{u.username}</div>
+                        <div className="admin-user-cell-name">{u.username}</div>
+                        <div className="admin-user-cell-sub">{u.authStatus}</div>
                       </div>
                     </div>
                   </td>
                   <td>{u.campus}</td>
                   <td>{u.rating || '-'}</td>
                   <td>{u.completedCount || 0}</td>
-                  <td className="admin-td-num">{u.wallet}</td>
+                  <td className="admin-td-num">{formatAmount(u.wallet)}</td>
                   <td><span className={`admin-badge ${u.authStatus === '已实名' ? 'admin-badge-green' : 'admin-badge-gray'}`}>{u.authStatus}</span></td>
                   <td><span className={`admin-badge ${u.banned ? 'admin-badge-red' : 'admin-badge-green'}`}>{u.banned ? '已封禁' : '正常'}</span></td>
                   <td>
@@ -406,7 +455,7 @@ function TasksPanel({ token }) {
                   <td className="admin-td-id">{t.id}</td>
                   <td className="admin-td-title">{t.title}</td>
                   <td><span className="admin-badge admin-badge-blue">{t.category}</span></td>
-                  <td className="admin-td-num">{t.price}</td>
+                  <td className="admin-td-num">{formatAmount(t.price)}</td>
                   <td>{t.publisherName}</td>
                   <td>
                     <span className="admin-status-dot" style={{ background: statusMap[t.status]?.color || '#999' }} />
@@ -482,7 +531,7 @@ function OrdersPanel({ token }) {
                 <td className="admin-td-id">{o.id}</td>
                 <td className="admin-td-title">{o.taskTitle}</td>
                 <td><span className={`admin-badge ${o.role === 'publisher' ? 'admin-badge-blue' : 'admin-badge-purple'}`}>{o.role === 'publisher' ? '发布者' : '跑腿者'}</span></td>
-                <td className="admin-td-num">{o.amount}</td>
+                <td className="admin-td-num">{formatAmount(o.amount)}</td>
                 <td>{o.withUser}</td>
                 <td>
                   <span className="admin-status-dot" style={{ background: statusMap[o.status]?.color || '#999' }} />
@@ -553,11 +602,11 @@ function FinancePanel({ token }) {
             {flows.map((f) => (
               <tr key={f.id}>
                 <td className="admin-td-id">{f.id}</td>
-                <td>{f.nickname}</td>
+                <td>{f.userName}</td>
                 <td>{f.title}</td>
                 <td><span className="admin-badge" style={{ background: (typeMap[f.type]?.color || '#999') + '18', color: typeMap[f.type]?.color || '#999' }}>{typeMap[f.type]?.text || f.type}</span></td>
-                <td className={f.amount >= 0 ? 'admin-td-num admin-text-green' : 'admin-td-num admin-text-red'}>{f.amount >= 0 ? '+' : ''}{f.amount}</td>
-                <td className="admin-td-num">{f.balanceAfter}</td>
+                <td className={f.amount >= 0 ? 'admin-td-num admin-text-green' : 'admin-td-num admin-text-red'}>{f.amount >= 0 ? '+' : ''}{formatAmount(f.amount)}</td>
+                <td className="admin-td-num">{formatAmount(f.balanceAfter)}</td>
                 <td className="admin-td-time">{new Date(f.createdAt).toLocaleString()}</td>
               </tr>
             ))}
@@ -620,8 +669,8 @@ function WithdrawalsPanel({ token }) {
             {withdrawals.map((w) => (
               <tr key={w.id}>
                 <td className="admin-td-id">{w.id}</td>
-                <td>{w.nickname}</td>
-                <td className="admin-td-num">{w.amount}</td>
+                <td>{w.userName}</td>
+                <td className="admin-td-num">{formatAmount(w.amount)}</td>
                 <td>
                   <span className={`admin-badge ${w.status === 'pending' ? 'admin-badge-yellow' : w.status === 'approved' ? 'admin-badge-green' : 'admin-badge-red'}`}>
                     {w.status === 'pending' ? '待审核' : w.status === 'approved' ? '已批准' : '已驳回'}
@@ -756,9 +805,28 @@ function LogsPanel({ token }) {
 /* ═══════════════ Appeals Panel ═══════════════ */
 function AppealsPanel({ token }) {
   const [appeals, setAppeals] = useState(null);
+  const [refundRules, setRefundRules] = useState({});
 
   function load() {
-    listAdminAppeals(token).then(setAppeals).catch(() => {});
+    listAdminAppeals(token)
+      .then((data) => {
+        setAppeals(data);
+        setRefundRules((current) => {
+          const next = { ...current };
+          (data || []).forEach((appeal) => {
+            if (!next[appeal.id]) {
+              const price = Number(appeal.taskPrice || 0);
+              next[appeal.id] = {
+                refundTo: 'publisher',
+                publisherAmount: price.toFixed(2),
+                runnerAmount: '0.00'
+              };
+            }
+          });
+          return next;
+        });
+      })
+      .catch(() => {});
   }
 
   useEffect(() => { load(); }, [token]);
@@ -766,11 +834,44 @@ function AppealsPanel({ token }) {
   async function handleAction(id, action) {
     if (!confirm(action === 'resolved' ? '确定通过该申诉？' : '确定驳回该申诉？')) return;
     try {
-      await handleAppeal(token, id, action);
+      if (action === 'resolved') {
+        const rule = refundRules[id];
+        await settleAppeal(token, id, {
+          refundTo: rule?.refundTo || 'publisher',
+          publisherAmount: Number(rule?.publisherAmount || 0),
+          runnerAmount: Number(rule?.runnerAmount || 0)
+        });
+      } else {
+        await handleAppeal(token, id, 'reject');
+      }
       load();
     } catch (err) {
       alert(err.message);
     }
+  }
+
+  function applyRefundPreset(appeal, refundTo) {
+    const price = Number(appeal.taskPrice || 0);
+    if (refundTo === 'publisher') {
+      return {
+        refundTo,
+        publisherAmount: price.toFixed(2),
+        runnerAmount: '0.00'
+      };
+    }
+    if (refundTo === 'runner') {
+      return {
+        refundTo,
+        publisherAmount: '0.00',
+        runnerAmount: price.toFixed(2)
+      };
+    }
+    const publisherAmount = (price / 2).toFixed(2);
+    return {
+      refundTo,
+      publisherAmount,
+      runnerAmount: (price - Number(publisherAmount)).toFixed(2)
+    };
   }
 
   if (!appeals) return <div className="page-loading">加载中...</div>;
@@ -783,6 +884,7 @@ function AppealsPanel({ token }) {
             <th>ID</th>
             <th>任务</th>
             <th>申诉人</th>
+            <th>订单额</th>
             <th>原因</th>
             <th>详情</th>
             <th>状态</th>
@@ -796,6 +898,7 @@ function AppealsPanel({ token }) {
               <td className="admin-td-id">{a.id}</td>
               <td className="admin-td-title">{a.taskTitle}</td>
               <td>{a.fromUserName}</td>
+              <td className="admin-td-num">{formatAmount(a.taskPrice)}</td>
               <td>{a.reason}</td>
               <td className="admin-td-detail">{a.detail}</td>
               <td>
@@ -807,6 +910,45 @@ function AppealsPanel({ token }) {
               <td className="admin-td-actions">
                 {a.status === 'pending' && (
                   <>
+                    <select
+                      value={refundRules[a.id]?.refundTo || 'publisher'}
+                      onChange={(event) => setRefundRules((prev) => ({
+                        ...prev,
+                        [a.id]: applyRefundPreset(a, event.target.value)
+                      }))}
+                    >
+                      <option value="publisher">退回给发布方</option>
+                      <option value="runner">退回给接单方</option>
+                      <option value="both">双方各退一部分</option>
+                    </select>
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={refundRules[a.id]?.publisherAmount || '0.00'}
+                      onChange={(event) => setRefundRules((prev) => ({
+                        ...prev,
+                        [a.id]: {
+                          ...(prev[a.id] || applyRefundPreset(a, 'publisher')),
+                          publisherAmount: event.target.value
+                        }
+                      }))}
+                      placeholder="发布方积分"
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={refundRules[a.id]?.runnerAmount || '0.00'}
+                      onChange={(event) => setRefundRules((prev) => ({
+                        ...prev,
+                        [a.id]: {
+                          ...(prev[a.id] || applyRefundPreset(a, 'publisher')),
+                          runnerAmount: event.target.value
+                        }
+                      }))}
+                      placeholder="接单方积分"
+                    />
                     <button className="admin-action-btn admin-action-green" onClick={() => handleAction(a.id, 'resolved')}>通过</button>
                     <button className="admin-action-btn admin-action-red" onClick={() => handleAction(a.id, 'rejected')}>驳回</button>
                   </>
@@ -814,7 +956,7 @@ function AppealsPanel({ token }) {
               </td>
             </tr>
           ))}
-          {appeals.length === 0 && <tr><td colSpan={8} className="admin-table-empty">暂无申诉</td></tr>}
+          {appeals.length === 0 && <tr><td colSpan={9} className="admin-table-empty">暂无申诉</td></tr>}
         </tbody>
       </table>
     </div>

@@ -17,6 +17,12 @@ export const env = {
     windowSeconds: Number(process.env.RATE_LIMIT_WINDOW_SECONDS || 60),
     maxRequests: Number(process.env.RATE_LIMIT_MAX_REQUESTS || 120)
   },
+  admin: {
+    username: process.env.ADMIN_USERNAME || '',
+    name: process.env.ADMIN_NAME || '系统管理员',
+    password: process.env.ADMIN_PASSWORD || '',
+    passwordHash: process.env.ADMIN_PASSWORD_HASH || ''
+  },
   tencent: {
     mapKey: process.env.TENCENT_MAP_KEY || '',
     imSdkAppId: process.env.TENCENT_IM_SDKAPPID || '',

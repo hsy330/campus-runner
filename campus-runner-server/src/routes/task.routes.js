@@ -2,6 +2,7 @@ import express from 'express';
 
 import {
   acceptTask,
+  cancelTask,
   createTaskAppeal,
   createTaskReview,
   getTaskDetail,
@@ -40,7 +41,7 @@ router.post('/tasks', async (req, res, next) => {
   try {
     const user = await requireUser(req);
     const data = await publishTask(user.id, req.body || {});
-    res.status(201).json({ data, message: '任务已发布，待审核' });
+    res.status(201).json({ data, message: '任务已发布，等待审核' });
   } catch (error) {
     next(error);
   }
@@ -51,6 +52,16 @@ router.post('/tasks/:id/accept', async (req, res, next) => {
     const user = await requireUser(req);
     const data = await acceptTask(user.id, req.params.id);
     res.json({ data, message: '接单成功' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/tasks/:id/cancel', async (req, res, next) => {
+  try {
+    const user = await requireUser(req);
+    const data = await cancelTask(user.id, req.params.id);
+    res.json({ data, message: '任务已取消，积分已退回' });
   } catch (error) {
     next(error);
   }

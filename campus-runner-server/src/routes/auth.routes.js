@@ -38,7 +38,6 @@ router.get('/verify', async (req, res, next) => {
       data: {
         id: user.id,
         username: user.username,
-        nickname: user.nickname,
         avatar: user.avatar,
         campus: user.campus,
         verified: user.verified,
@@ -64,7 +63,6 @@ router.put('/profile', async (req, res, next) => {
       data: {
         id: updated.id,
         username: updated.username,
-        nickname: updated.nickname,
         avatar: updated.avatar,
         campus: updated.campus,
         verified: updated.verified,

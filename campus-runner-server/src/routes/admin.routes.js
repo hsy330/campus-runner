@@ -1,6 +1,6 @@
 import express from 'express';
 
-import { approveTask, handleAppeal, listAppeals, listModerationLogs } from '../services/task.service.js';
+import { approveTask, listAppeals, listModerationLogs, rejectAppeal, settleAppeal } from '../services/task.service.js';
 import { adminLogin, adminLogout, requireAdmin, verifyAdminToken } from '../services/admin-auth.service.js';
 import {
   addSensitiveWord,
@@ -10,7 +10,9 @@ import {
 } from '../services/moderation.service.js';
 import { db } from '../data/store.js';
 import { findUserById, updateUser } from '../repositories/user.repository.js';
-import { createWalletFlowRecord } from '../repositories/wallet.repository.js';
+import { applyWalletDelta, roundAmount } from '../services/profile.service.js';
+import { saveSnapshot } from '../lib/file-persist.js';
+import { TASK_STATUS } from '../lib/task-status.js';
 
 const router = express.Router();
 
@@ -18,7 +20,6 @@ function clone(data) {
   return JSON.parse(JSON.stringify(data));
 }
 
-/* ── Auth ── */
 router.post('/admin/login', (req, res, next) => {
   try {
     const data = adminLogin(req.body.username, req.body.password);
@@ -52,7 +53,6 @@ router.get('/admin/session', (req, res, next) => {
   }
 });
 
-/* ── Admin middleware ── */
 router.use('/admin', (req, res, next) => {
   try {
     requireAdmin(req);
@@ -62,7 +62,6 @@ router.use('/admin', (req, res, next) => {
   }
 });
 
-/* ── Dashboard Statistics ── */
 router.get('/admin/stats', (req, res) => {
   const users = db.users || [];
   const tasks = db.tasks || [];
@@ -70,22 +69,68 @@ router.get('/admin/stats', (req, res) => {
   const appeals = db.appeals || [];
   const withdrawRequests = db.withdrawRequests || [];
   const walletFlows = db.walletFlows || [];
+  const settledStatuses = [TASK_STATUS.FINISHED, TASK_STATUS.RESOLVED];
+  const settledTasks = tasks.filter((item) => settledStatuses.includes(item.status));
 
   const totalUsers = users.length;
   const totalTasks = tasks.length;
-  const openTasks = tasks.filter(t => t.status === 'open').length;
-  const acceptedTasks = tasks.filter(t => t.status === 'accepted').length;
-  const runningTasks = tasks.filter(t => t.status === 'running').length;
-  const finishedTasks = tasks.filter(t => t.status === 'finished').length;
-  const pendingAppeals = appeals.filter(a => a.status === 'pending').length;
-  const pendingWithdrawals = withdrawRequests.filter(w => w.status === 'pending').length;
+  const openTasks = tasks.filter((item) => item.status === TASK_STATUS.OPEN).length;
+  const acceptedTasks = tasks.filter((item) => item.status === TASK_STATUS.ACCEPTED).length;
+  const runningTasks = tasks.filter((item) => item.status === TASK_STATUS.RUNNING).length;
+  const finishedTasks = tasks.filter((item) => item.status === TASK_STATUS.FINISHED).length;
+  const resolvedTasks = tasks.filter((item) => item.status === TASK_STATUS.RESOLVED).length;
+  const pendingAppeals = appeals.filter((item) => item.status === 'pending').length;
+  const pendingWithdrawals = withdrawRequests.filter((item) => item.status === 'pending').length;
   const totalRevenue = walletFlows
-    .filter(f => f.type === 'freeze')
-    .reduce((sum, f) => sum + Math.abs(f.amount), 0);
+    .filter((item) => item.type === 'freeze')
+    .reduce((sum, item) => sum + Math.abs(item.amount), 0);
+  const totalTurnover = roundAmount(
+    settledTasks.reduce((sum, item) => sum + Number(item.price || 0), 0)
+  );
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
-  const todayTasks = tasks.filter(t => new Date(t.createdAt) >= todayStart).length;
-  const todayUsers = users.filter(u => new Date(u.createdAt || Date.now()) >= todayStart).length;
+  const todayTasks = tasks.filter((item) => new Date(item.createdAt) >= todayStart).length;
+  const todayUsers = users.filter((item) => new Date(item.createdAt || Date.now()) >= todayStart).length;
+  const averageOrderAmount = settledTasks.length > 0 ? roundAmount(totalTurnover / settledTasks.length) : 0;
+
+  const recentTurnover = Array.from({ length: 7 }, (_, index) => {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - (6 - index));
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+
+    const dayTasks = settledTasks.filter((item) => {
+      const point = new Date(item.finishedAt || item.resolvedAt || item.updatedAt || item.createdAt);
+      return point >= start && point < end;
+    });
+
+    return {
+      date: start.toISOString().slice(0, 10),
+      label: `${start.getMonth() + 1}/${start.getDate()}`,
+      count: dayTasks.length,
+      amount: roundAmount(dayTasks.reduce((sum, item) => sum + Number(item.price || 0), 0))
+    };
+  });
+
+  const categoryStats = Object.entries(
+    tasks.reduce((accumulator, item) => {
+      accumulator[item.category || '其他'] = (accumulator[item.category || '其他'] || 0) + 1;
+      return accumulator;
+    }, {})
+  )
+    .map(([name, value]) => ({ name, value }))
+    .sort((left, right) => right.value - left.value)
+    .slice(0, 6);
+
+  const campusStats = Object.entries(
+    tasks.reduce((accumulator, item) => {
+      accumulator[item.campus || '未知校区'] = (accumulator[item.campus || '未知校区'] || 0) + 1;
+      return accumulator;
+    }, {})
+  )
+    .map(([name, value]) => ({ name, value }))
+    .sort((left, right) => right.value - left.value);
 
   res.json({
     data: {
@@ -95,17 +140,22 @@ router.get('/admin/stats', (req, res) => {
       acceptedTasks,
       runningTasks,
       finishedTasks,
+      resolvedTasks,
       pendingAppeals,
       pendingWithdrawals,
       totalRevenue,
+      totalTurnover,
       todayTasks,
       todayUsers,
-      totalOrders: orders.length
+      totalOrders: orders.length,
+      averageOrderAmount,
+      recentTurnover,
+      categoryStats,
+      campusStats
     }
   });
 });
 
-/* ── User Management ── */
 router.get('/admin/users', (req, res) => {
   const keyword = String(req.query.keyword || '').trim().toLowerCase();
   const page = Math.max(1, Number(req.query.page) || 1);
@@ -113,27 +163,25 @@ router.get('/admin/users', (req, res) => {
 
   let users = clone(db.users || []);
   if (keyword) {
-    users = users.filter(u =>
-      (u.nickname || '').toLowerCase().includes(keyword) ||
-      (u.username || '').toLowerCase().includes(keyword) ||
-      (u.id || '').toLowerCase().includes(keyword)
+    users = users.filter((item) =>
+      (item.username || '').toLowerCase().includes(keyword) ||
+      (item.id || '').toLowerCase().includes(keyword)
     );
   }
 
   const total = users.length;
-  const list = users.slice((page - 1) * pageSize, page * pageSize).map(u => ({
-    id: u.id,
-    username: u.username,
-    nickname: u.nickname,
-    avatar: u.avatar,
-    campus: u.campus,
-    verified: u.verified,
-    authStatus: u.authStatus,
-    rating: u.rating,
-    completedCount: u.completedCount,
-    wallet: u.wallet,
-    banned: Boolean(u.banned),
-    createdAt: u.createdAt
+  const list = users.slice((page - 1) * pageSize, page * pageSize).map((item) => ({
+    id: item.id,
+    username: item.username,
+    avatar: item.avatar,
+    campus: item.campus,
+    verified: item.verified,
+    authStatus: item.authStatus,
+    rating: item.rating,
+    completedCount: item.completedCount,
+    wallet: item.wallet,
+    banned: Boolean(item.banned),
+    createdAt: item.createdAt
   }));
 
   res.json({ data: { list, total, page, pageSize } });
@@ -161,7 +209,6 @@ router.post('/admin/users/:id/unban', async (req, res, next) => {
   }
 });
 
-/* ── Task Management ── */
 router.get('/admin/tasks', (req, res) => {
   const status = req.query.status;
   const keyword = String(req.query.keyword || '').trim().toLowerCase();
@@ -170,13 +217,13 @@ router.get('/admin/tasks', (req, res) => {
 
   let tasks = clone(db.tasks || []);
   if (status && status !== 'all') {
-    tasks = tasks.filter(t => t.status === status);
+    tasks = tasks.filter((item) => item.status === status);
   }
   if (keyword) {
-    tasks = tasks.filter(t =>
-      (t.title || '').toLowerCase().includes(keyword) ||
-      (t.id || '').toLowerCase().includes(keyword) ||
-      (t.publisherName || '').toLowerCase().includes(keyword)
+    tasks = tasks.filter((item) =>
+      (item.title || '').toLowerCase().includes(keyword) ||
+      (item.id || '').toLowerCase().includes(keyword) ||
+      (item.publisherName || '').toLowerCase().includes(keyword)
     );
   }
 
@@ -204,7 +251,6 @@ router.post('/admin/tasks/:id/remove', async (req, res, next) => {
   }
 });
 
-/* ── Order Management ── */
 router.get('/admin/orders', (req, res) => {
   const page = Math.max(1, Number(req.query.page) || 1);
   const pageSize = Math.min(50, Math.max(1, Number(req.query.pageSize) || 20));
@@ -216,14 +262,13 @@ router.get('/admin/orders', (req, res) => {
   res.json({ data: { list, total, page, pageSize } });
 });
 
-/* ── Wallet / Financial ── */
 router.get('/admin/wallet/flows', (req, res) => {
   const page = Math.max(1, Number(req.query.page) || 1);
   const pageSize = Math.min(50, Math.max(1, Number(req.query.pageSize) || 20));
 
-  const flows = clone(db.walletFlows || []).map(f => {
-    const user = (db.users || []).find(u => u.id === f.userId);
-    return { ...f, nickname: user ? user.nickname : '未知用户' };
+  const flows = clone(db.walletFlows || []).map((item) => {
+    const user = (db.users || []).find((userItem) => userItem.id === item.userId);
+    return { ...item, userName: user ? user.username : '未知用户', userAvatar: user?.avatar || '' };
   });
   const total = flows.length;
   const list = flows.slice((page - 1) * pageSize, page * pageSize);
@@ -231,14 +276,13 @@ router.get('/admin/wallet/flows', (req, res) => {
   res.json({ data: { list, total, page, pageSize } });
 });
 
-/* ── Withdrawal Requests ── */
 router.get('/admin/withdrawals', (req, res) => {
   const page = Math.max(1, Number(req.query.page) || 1);
   const pageSize = Math.min(50, Math.max(1, Number(req.query.pageSize) || 20));
 
-  const withdrawals = clone(db.withdrawRequests || []).map(w => {
-    const user = (db.users || []).find(u => u.id === w.userId);
-    return { ...w, nickname: user ? user.nickname : '未知用户' };
+  const withdrawals = clone(db.withdrawRequests || []).map((item) => {
+    const user = (db.users || []).find((userItem) => userItem.id === item.userId);
+    return { ...item, userName: user ? user.username : '未知用户', userAvatar: user?.avatar || '' };
   });
   const total = withdrawals.length;
   const list = withdrawals.slice((page - 1) * pageSize, page * pageSize);
@@ -248,10 +292,13 @@ router.get('/admin/withdrawals', (req, res) => {
 
 router.post('/admin/withdrawals/:id/approve', async (req, res, next) => {
   try {
-    const w = (db.withdrawRequests || []).find(item => item.id === req.params.id);
-    if (!w) throw new Error('提现申请不存在');
-    if (w.status !== 'pending') throw new Error('该申请已处理');
-    w.status = 'approved';
+    const request = (db.withdrawRequests || []).find((item) => item.id === req.params.id);
+    if (!request) throw new Error('提现申请不存在');
+    if (request.status !== 'pending') throw new Error('该申请已处理');
+
+    request.status = 'approved';
+    request.updatedAt = new Date().toISOString();
+    await saveSnapshot(db);
     res.json({ data: true, message: '提现已批准' });
   } catch (error) {
     next(error);
@@ -260,25 +307,18 @@ router.post('/admin/withdrawals/:id/approve', async (req, res, next) => {
 
 router.post('/admin/withdrawals/:id/reject', async (req, res, next) => {
   try {
-    const w = (db.withdrawRequests || []).find(item => item.id === req.params.id);
-    if (!w) throw new Error('提现申请不存在');
-    if (w.status !== 'pending') throw new Error('该申请已处理');
-    w.status = 'rejected';
+    const request = (db.withdrawRequests || []).find((item) => item.id === req.params.id);
+    if (!request) throw new Error('提现申请不存在');
+    if (request.status !== 'pending') throw new Error('该申请已处理');
 
-    const user = await findUserById(w.userId);
-    if (user) {
-      user.wallet += w.amount;
-      await updateUser(w.userId, { wallet: user.wallet });
-      await createWalletFlowRecord({
-        id: `wf_refund_${Date.now()}`,
-        userId: w.userId,
-        title: '提现被驳回，退款',
-        type: 'refund',
-        amount: w.amount,
-        balanceAfter: user.wallet,
-        createdAt: new Date().toISOString()
-      });
-    }
+    request.status = 'rejected';
+    request.updatedAt = new Date().toISOString();
+    await applyWalletDelta(request.userId, roundAmount(request.amount), {
+      title: '提现驳回退款',
+      type: 'refund',
+      persistSnapshot: false
+    });
+    await saveSnapshot(db);
 
     res.json({ data: true, message: '提现已驳回并退款' });
   } catch (error) {
@@ -286,7 +326,6 @@ router.post('/admin/withdrawals/:id/reject', async (req, res, next) => {
   }
 });
 
-/* ── Moderation ── */
 router.get('/admin/moderation', (req, res) => {
   res.json({ data: listModerationLogs() });
 });
@@ -295,25 +334,26 @@ router.get('/admin/sensitive-words', (req, res) => {
   res.json({ data: listSensitiveWords() });
 });
 
-router.post('/admin/sensitive-words', (req, res, next) => {
+router.post('/admin/sensitive-words', async (req, res, next) => {
   try {
-    const data = addSensitiveWord(req.body.word);
+    const word = req.body && Object.prototype.hasOwnProperty.call(req.body, 'word') ? req.body.word : '';
+    const data = await addSensitiveWord(word);
     res.status(201).json({ data, message: '敏感词已添加' });
   } catch (error) {
     next(error);
   }
 });
 
-router.post('/admin/sensitive-words/remove', (req, res, next) => {
+router.post('/admin/sensitive-words/remove', async (req, res, next) => {
   try {
-    const data = removeSensitiveWord(req.body.word);
+    const word = req.body && Object.prototype.hasOwnProperty.call(req.body, 'word') ? req.body.word : '';
+    const data = await removeSensitiveWord(word);
     res.json({ data, message: '敏感词已删除' });
   } catch (error) {
     next(error);
   }
 });
 
-/* ── Appeals ── */
 router.get('/admin/appeals', async (req, res, next) => {
   try {
     res.json({ data: await listAppeals() });
@@ -322,10 +362,19 @@ router.get('/admin/appeals', async (req, res, next) => {
   }
 });
 
+router.post('/admin/appeals/:id/settle', async (req, res, next) => {
+  try {
+    const data = await settleAppeal(req.params.id, req.body || {});
+    res.json({ data, message: '申诉已处理并退款' });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post('/admin/appeals/:id/resolve', async (req, res, next) => {
   try {
-    const data = await handleAppeal(req.params.id, 'resolved');
-    res.json({ data, message: '申诉已处理' });
+    const data = await settleAppeal(req.params.id, req.body || {});
+    res.json({ data, message: '申诉已处理并退款' });
   } catch (error) {
     next(error);
   }
@@ -333,7 +382,7 @@ router.post('/admin/appeals/:id/resolve', async (req, res, next) => {
 
 router.post('/admin/appeals/:id/reject', async (req, res, next) => {
   try {
-    const data = await handleAppeal(req.params.id, 'rejected');
+    const data = await rejectAppeal(req.params.id);
     res.json({ data, message: '申诉已驳回' });
   } catch (error) {
     next(error);

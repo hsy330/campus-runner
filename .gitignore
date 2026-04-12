@@ -8,6 +8,11 @@ server.out.log
 preview-http.err.log
 preview-http.out.log
 campus-runner-server/server-dev.log
+campus-runner-server/data/
+campus-runner-web/web-dev.out.log
+campus-runner-web/web-dev.err.log
+campus-runner-server/server-dev.out.log
+campus-runner-server/server-dev.err.log
 .DS_Store
 Thumbs.db
 tools/cloudflared.exe

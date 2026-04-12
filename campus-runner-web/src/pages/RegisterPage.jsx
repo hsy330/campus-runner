@@ -7,7 +7,7 @@ import { useAuth } from '../auth.jsx';
 const CAMPUS_LIST = ['东方红校区', '城南校区'];
 
 export function RegisterPage() {
-  const [form, setForm] = useState({ username: '', nickname: '', campus: CAMPUS_LIST[0], password: '', confirmPassword: '' });
+  const [form, setForm] = useState({ username: '', campus: CAMPUS_LIST[0], password: '', confirmPassword: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const { login } = useAuth();
@@ -20,7 +20,7 @@ export function RegisterPage() {
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
-    if (!form.username.trim() || !form.nickname.trim() || !form.campus || !form.password) {
+    if (!form.username.trim() || !form.campus || !form.password) {
       setError('请填写所有必填项');
       return;
     }
@@ -48,7 +48,6 @@ export function RegisterPage() {
         <p className="auth-subtitle">新用户注册</p>
         <form onSubmit={handleSubmit} className="auth-form">
           <input type="text" placeholder="用户名（3-20位字母数字下划线）" value={form.username} onChange={(e) => update('username', e.target.value)} disabled={loading} />
-          <input type="text" placeholder="昵称" value={form.nickname} onChange={(e) => update('nickname', e.target.value)} disabled={loading} />
           <select value={form.campus} onChange={(e) => update('campus', e.target.value)} disabled={loading}>
             {CAMPUS_LIST.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>

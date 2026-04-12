@@ -59,6 +59,7 @@ export function ReviewPage() {
   return (
     <div className="page review-page">
       <h2>评价订单</h2>
+      <p className="subtle" style={{ marginBottom: 16 }}>每个订单双方各可评价一次，提交后不可修改。</p>
       <form onSubmit={handleSubmit} className="review-form">
         <div className="review-score-item">
           <label>响应速度</label>

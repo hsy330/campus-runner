@@ -3,22 +3,8 @@ import { useNavigate } from 'react-router-dom';
 
 import { listOrders } from '../lib/api.js';
 import { useAuth } from '../auth.jsx';
-
-const STATUS_LABELS = {
-  open_waiting: '待接单',
-  accepted: '已接单',
-  running: '进行中',
-  confirming: '待确认',
-  finished: '已完成'
-};
-
-const STATUS_COLORS = {
-  open_waiting: '#f59e0b',
-  accepted: '#2563eb',
-  running: '#2563eb',
-  confirming: '#8b5cf6',
-  finished: '#10b981'
-};
+import { formatAmount } from '../lib/format.js';
+import { ORDER_STATUS_COLORS, ORDER_STATUS_LABELS, TASK_STATUS } from '../lib/taskStatus.js';
 
 export function OrdersPage() {
   const { token } = useAuth();
@@ -30,16 +16,30 @@ export function OrdersPage() {
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
     listOrders(token)
-      .then((data) => { if (active) setOrders(Array.isArray(data) ? data : []); })
-      .catch((err) => { if (active) setError(err.message); })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
+      .then((data) => {
+        if (active) {
+          setOrders(Array.isArray(data) ? data : []);
+          setError('');
+        }
+      })
+      .catch((err) => {
+        if (active) {
+          setError(err.message);
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
   }, [token]);
 
-  const published = orders.filter((o) => o.ownerRole === 'publisher');
-  const accepted = orders.filter((o) => o.ownerRole === 'runner');
+  const published = orders.filter((item) => item.ownerRole === 'publisher');
+  const accepted = orders.filter((item) => item.ownerRole === 'runner');
 
   if (loading) return <div className="page"><p className="page-loading">加载中...</p></div>;
   if (error) return <div className="page"><p className="auth-error">{error}</p></div>;
@@ -61,24 +61,24 @@ export function OrdersPage() {
         <p className="empty-state">{tab === 'published' ? '暂无我发布的任务' : '暂无我接单的任务'}</p>
       )}
 
-      {currentList.map((o) => (
-        <div key={o.id} className="order-card" onClick={() => navigate(`/tasks/${o.taskId}`)}>
+      {currentList.map((item) => (
+        <div key={item.id} className="order-card" onClick={() => navigate(`/tasks/${item.taskId}`)}>
           <div className="order-card-top">
             <div>
-              <p className="order-title">{o.taskTitle}</p>
-              <p className="order-meta">{o.campus} · {o.withUser}</p>
+              <p className="order-title">{item.taskTitle}</p>
+              <p className="order-meta">{item.campus} · {item.withUser}</p>
             </div>
-            <span className="order-price">{o.amount} 积分</span>
+            <span className="order-price">{formatAmount(item.amount)} 积分</span>
           </div>
           <div className="order-card-bottom">
-            <span className="order-status-tag" style={{ background: STATUS_COLORS[o.status] || '#64748b' }}>
-              {STATUS_LABELS[o.status] || o.status}
+            <span className="order-status-tag" style={{ background: ORDER_STATUS_COLORS[item.status] || '#64748b' }}>
+              {ORDER_STATUS_LABELS[item.status] || item.status}
             </span>
-            {o.ownerRole === 'runner' && o.status === 'finished' && !o.reviewed && (
+            {item.ownerRole === 'runner' && item.status === TASK_STATUS.FINISHED && !item.reviewed && (
               <span className="order-hint">待评价</span>
             )}
             <span className="subtle" style={{ marginLeft: 'auto' }}>
-              {new Date(o.createdAt).toLocaleDateString()}
+              {new Date(item.createdAt).toLocaleDateString()}
             </span>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import { db } from '../data/store.js';
+import { saveSnapshot } from '../lib/file-persist.js';
 import { getMysqlPool } from '../lib/mysql.js';
 import { ensurePersistenceReady } from './persistence.repository.js';
 
@@ -25,123 +26,143 @@ function mapOrderRow(row) {
 }
 
 function syncMemoryOrder(order) {
-  const index = db.orders.findIndex((item) => item.id === order.id);
+  const nextOrder = clone(order);
+  const index = db.orders.findIndex((item) => item.id === nextOrder.id);
   if (index >= 0) {
-    db.orders[index] = { ...db.orders[index], ...order };
+    db.orders[index] = { ...db.orders[index], ...nextOrder };
   } else {
-    db.orders.unshift(clone(order));
+    db.orders.unshift(nextOrder);
+  }
+  return db.orders.find((item) => item.id === nextOrder.id) || nextOrder;
+}
+
+async function loadAllOrdersFromMysql() {
+  const ready = await ensurePersistenceReady();
+  if (!ready) {
+    return [];
+  }
+
+  try {
+    const pool = getMysqlPool();
+    const [rows] = await pool.query('SELECT * FROM orders ORDER BY updated_at DESC');
+    const orders = rows.map(mapOrderRow);
+    orders.forEach(syncMemoryOrder);
+    return orders;
+  } catch {
+    return [];
   }
 }
 
 export async function createOrderRecord(order) {
-  syncMemoryOrder(order);
+  const nextOrder = syncMemoryOrder(order);
+  await saveSnapshot(db);
+
   const ready = await ensurePersistenceReady();
   if (!ready) {
-    return order;
+    return clone(nextOrder);
   }
 
-  const pool = getMysqlPool();
-  await pool.query(
-    `INSERT INTO orders (
-      id, owner_user_id, task_id, task_title, campus, status, role, owner_role,
-      amount, with_user, timeout_at, updated_at, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      order.id,
-      order.ownerUserId,
-      order.taskId,
-      order.taskTitle,
-      order.campus,
-      order.status,
-      order.role,
-      order.ownerRole,
-      order.amount,
-      order.withUser,
-      order.timeoutAt ? new Date(order.timeoutAt) : null,
-      new Date(order.updatedAt || Date.now()),
-      new Date(order.createdAt || Date.now())
-    ]
-  );
-  return order;
+  try {
+    const pool = getMysqlPool();
+    await pool.query(
+      `INSERT INTO orders (
+        id, owner_user_id, task_id, task_title, campus, status, role, owner_role,
+        amount, with_user, timeout_at, updated_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        nextOrder.id,
+        nextOrder.ownerUserId,
+        nextOrder.taskId,
+        nextOrder.taskTitle,
+        nextOrder.campus,
+        nextOrder.status,
+        nextOrder.role,
+        nextOrder.ownerRole,
+        nextOrder.amount,
+        nextOrder.withUser,
+        nextOrder.timeoutAt ? new Date(nextOrder.timeoutAt) : null,
+        new Date(nextOrder.updatedAt || Date.now()),
+        new Date(nextOrder.createdAt || Date.now())
+      ]
+    );
+  } catch {
+    return clone(nextOrder);
+  }
+
+  return clone(nextOrder);
 }
 
 export async function listOrdersByUserId(userId) {
-  const ready = await ensurePersistenceReady();
-  if (!ready) {
-    return clone(db.orders.filter((item) => item.ownerUserId === userId));
+  if (db.orders.length === 0) {
+    await loadAllOrdersFromMysql();
   }
-
-  const pool = getMysqlPool();
-  const [rows] = await pool.query('SELECT * FROM orders WHERE owner_user_id = ? ORDER BY updated_at DESC', [userId]);
-  return rows.map(mapOrderRow);
+  return clone(
+    db.orders
+      .filter((item) => item.ownerUserId === userId)
+      .sort((left, right) => new Date(right.updatedAt || right.createdAt) - new Date(left.updatedAt || left.createdAt))
+  );
 }
 
 export async function findOrderByTaskAndRole(taskId, ownerRole) {
-  const ready = await ensurePersistenceReady();
-  if (!ready) {
-    return clone(db.orders.find((item) => item.taskId === taskId && item.ownerRole === ownerRole) || null);
+  if (db.orders.length === 0) {
+    await loadAllOrdersFromMysql();
   }
-
-  const pool = getMysqlPool();
-  const [rows] = await pool.query('SELECT * FROM orders WHERE task_id = ? AND owner_role = ? LIMIT 1', [taskId, ownerRole]);
-  return rows[0] ? mapOrderRow(rows[0]) : null;
+  return clone(db.orders.find((item) => item.taskId === taskId && item.ownerRole === ownerRole) || null);
 }
 
 export async function findOrderByTaskAndOwner(taskId, ownerUserId) {
-  const ready = await ensurePersistenceReady();
-  if (!ready) {
-    return clone(db.orders.find((item) => item.taskId === taskId && item.ownerUserId === ownerUserId) || null);
+  if (db.orders.length === 0) {
+    await loadAllOrdersFromMysql();
   }
-
-  const pool = getMysqlPool();
-  const [rows] = await pool.query('SELECT * FROM orders WHERE task_id = ? AND owner_user_id = ? LIMIT 1', [taskId, ownerUserId]);
-  return rows[0] ? mapOrderRow(rows[0]) : null;
+  return clone(db.orders.find((item) => item.taskId === taskId && item.ownerUserId === ownerUserId) || null);
 }
 
 export async function updateOrderRecord(orderId, patch) {
-  const ready = await ensurePersistenceReady();
-  let current;
-  if (!ready) {
-    current = db.orders.find((item) => item.id === orderId) || null;
-  } else {
-    const pool = getMysqlPool();
-    const [rows] = await pool.query('SELECT * FROM orders WHERE id = ? LIMIT 1', [orderId]);
-    current = rows[0] ? mapOrderRow(rows[0]) : null;
+  if (db.orders.length === 0) {
+    await loadAllOrdersFromMysql();
   }
+
+  const current = db.orders.find((item) => item.id === orderId) || null;
   if (!current) {
     return null;
   }
 
-  const next = { ...current, ...patch };
-  syncMemoryOrder(next);
+  const nextOrder = syncMemoryOrder({ ...current, ...patch });
+  await saveSnapshot(db);
 
+  const ready = await ensurePersistenceReady();
   if (!ready) {
-    return next;
+    return clone(nextOrder);
   }
 
-  const pool = getMysqlPool();
-  await pool.query(
-    `UPDATE orders SET
-      owner_user_id = ?, task_id = ?, task_title = ?, campus = ?, status = ?, role = ?, owner_role = ?,
-      amount = ?, with_user = ?, timeout_at = ?, updated_at = ?, created_at = ?
-    WHERE id = ?`,
-    [
-      next.ownerUserId,
-      next.taskId,
-      next.taskTitle,
-      next.campus,
-      next.status,
-      next.role,
-      next.ownerRole,
-      next.amount,
-      next.withUser,
-      next.timeoutAt ? new Date(next.timeoutAt) : null,
-      new Date(next.updatedAt || Date.now()),
-      new Date(next.createdAt || Date.now()),
-      orderId
-    ]
-  );
-  return next;
+  try {
+    const pool = getMysqlPool();
+    await pool.query(
+      `UPDATE orders SET
+        owner_user_id = ?, task_id = ?, task_title = ?, campus = ?, status = ?, role = ?, owner_role = ?,
+        amount = ?, with_user = ?, timeout_at = ?, updated_at = ?, created_at = ?
+      WHERE id = ?`,
+      [
+        nextOrder.ownerUserId,
+        nextOrder.taskId,
+        nextOrder.taskTitle,
+        nextOrder.campus,
+        nextOrder.status,
+        nextOrder.role,
+        nextOrder.ownerRole,
+        nextOrder.amount,
+        nextOrder.withUser,
+        nextOrder.timeoutAt ? new Date(nextOrder.timeoutAt) : null,
+        new Date(nextOrder.updatedAt || Date.now()),
+        new Date(nextOrder.createdAt || Date.now()),
+        orderId
+      ]
+    );
+  } catch {
+    return clone(nextOrder);
+  }
+
+  return clone(nextOrder);
 }
 
 export async function updateOrdersByTaskId(taskId, patch) {
@@ -154,12 +175,12 @@ export async function updateOrdersByTaskId(taskId, patch) {
 }
 
 export async function listOrdersByTaskId(taskId) {
-  const ready = await ensurePersistenceReady();
-  if (!ready) {
-    return clone(db.orders.filter((item) => item.taskId === taskId));
+  if (db.orders.length === 0) {
+    await loadAllOrdersFromMysql();
   }
-
-  const pool = getMysqlPool();
-  const [rows] = await pool.query('SELECT * FROM orders WHERE task_id = ? ORDER BY updated_at DESC', [taskId]);
-  return rows.map(mapOrderRow);
+  return clone(
+    db.orders
+      .filter((item) => item.taskId === taskId)
+      .sort((left, right) => new Date(right.updatedAt || right.createdAt) - new Date(left.updatedAt || left.createdAt))
+  );
 }

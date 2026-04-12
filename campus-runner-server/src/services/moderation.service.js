@@ -1,5 +1,6 @@
 import { db } from '../data/store.js';
 import { findTaskById, updateTaskRecord } from '../repositories/task.repository.js';
+import { saveSnapshot } from '../lib/file-persist.js';
 
 function clone(data) {
   return JSON.parse(JSON.stringify(data));
@@ -13,7 +14,7 @@ export function listSensitiveWords() {
   return clone(db.sensitiveWords || []);
 }
 
-export function addSensitiveWord(word) {
+export async function addSensitiveWord(word) {
   const normalizedWord = normalizeWord(word);
   if (!normalizedWord) {
     throw new Error('敏感词不能为空');
@@ -24,16 +25,19 @@ export function addSensitiveWord(word) {
     db.sensitiveWords.unshift(normalizedWord);
   }
 
+  await saveSnapshot(db);
+
   return listSensitiveWords();
 }
 
-export function removeSensitiveWord(word) {
+export async function removeSensitiveWord(word) {
   const normalizedWord = normalizeWord(word);
   if (!normalizedWord) {
     throw new Error('敏感词不能为空');
   }
 
   db.sensitiveWords = (db.sensitiveWords || []).filter((item) => item !== normalizedWord);
+  await saveSnapshot(db);
   return listSensitiveWords();
 }
 
@@ -60,6 +64,8 @@ export async function removeTaskByAdmin(taskId) {
   if (log) {
     log.status = 'removed';
   }
+
+  await saveSnapshot(db);
 
   return clone(updated);
 }

@@ -14,6 +14,8 @@ import systemRoutes from './routes/system.routes.js';
 import taskRoutes from './routes/task.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import { startAutoCompleteListener } from './services/auto-complete.service.js';
+import { loadSnapshot, startAutoSave } from './lib/file-persist.js';
+import { db, restoreFromSnapshot } from './data/store.js';
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -67,7 +69,12 @@ app.use((error, req, res, next) => {
   res.status(status).json({ message: error.message || '请求失败' });
 });
 
-// Start background services
+const snapshot = await loadSnapshot();
+if (snapshot) {
+  restoreFromSnapshot(snapshot);
+}
+
+startAutoSave(db, 5000);
 startAutoCompleteListener();
 
 export default app;

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { ShieldAlert } from 'lucide-react';
 
 import { createAppeal, getTaskDetail } from '../lib/api.js';
 import { useAuth } from '../auth.jsx';
@@ -10,6 +11,13 @@ const REASONS = [
   '实际与描述不符',
   '无法联系到对方',
   '其他原因'
+];
+
+const DETAIL_SHORTCUTS = [
+  '对方超过约定时间仍未处理，请管理员协助判定。',
+  '我已多次联系对方，但一直没有回复。',
+  '订单执行结果与任务描述明显不一致。',
+  '希望按照实际责任重新分配积分。'
 ];
 
 export function AppealPage() {
@@ -24,6 +32,26 @@ export function AppealPage() {
   useEffect(() => {
     getTaskDetail(taskId).then((t) => setTaskTitle(t?.title || '')).catch(() => {});
   }, [taskId]);
+
+  function handleReasonClick(nextReason) {
+    setReason(nextReason);
+    if (!detail.trim()) {
+      setDetail(`申诉原因：${nextReason}\n具体情况：`);
+    }
+  }
+
+  function handleShortcutClick(shortcut) {
+    setDetail((current) => {
+      const trimmed = current.trimEnd();
+      if (!trimmed) {
+        return shortcut;
+      }
+      if (trimmed.includes(shortcut)) {
+        return current;
+      }
+      return `${trimmed}\n${shortcut}`;
+    });
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -44,7 +72,7 @@ export function AppealPage() {
 
   return (
     <div className="page appeal-page">
-      <h2>申诉订单</h2>
+      <h2 className="page-title-with-icon"><ShieldAlert size={22} /> 申诉订单</h2>
       {taskTitle && <p className="detail-meta">任务：{taskTitle}</p>}
 
       <form onSubmit={handleSubmit} className="review-form">
@@ -55,9 +83,23 @@ export function AppealPage() {
               key={r}
               type="button"
               className={`quick-tag ${reason === r ? 'active' : ''}`}
-              onClick={() => setReason(r)}
+              onClick={() => handleReasonClick(r)}
             >
               {r}
+            </button>
+          ))}
+        </div>
+
+        <label className="form-label">快捷语</label>
+        <div className="quick-comments">
+          {DETAIL_SHORTCUTS.map((shortcut) => (
+            <button
+              key={shortcut}
+              type="button"
+              className="quick-tag"
+              onClick={() => handleShortcutClick(shortcut)}
+            >
+              {shortcut}
             </button>
           ))}
         </div>

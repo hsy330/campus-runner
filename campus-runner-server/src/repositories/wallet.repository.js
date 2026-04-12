@@ -1,14 +1,21 @@
 import { db } from '../data/store.js';
+import { saveSnapshot } from '../lib/file-persist.js';
 import { getMysqlPool } from '../lib/mysql.js';
 import { ensurePersistenceReady } from './persistence.repository.js';
 
+function clone(data) {
+  return JSON.parse(JSON.stringify(data));
+}
+
 function syncMemoryFlow(flow) {
-  const index = db.walletFlows.findIndex((item) => item.id === flow.id);
+  const nextFlow = clone(flow);
+  const index = db.walletFlows.findIndex((item) => item.id === nextFlow.id);
   if (index >= 0) {
-    db.walletFlows[index] = { ...db.walletFlows[index], ...flow };
+    db.walletFlows[index] = { ...db.walletFlows[index], ...nextFlow };
   } else {
-    db.walletFlows.unshift({ ...flow });
+    db.walletFlows.unshift(nextFlow);
   }
+  return db.walletFlows.find((item) => item.id === nextFlow.id) || nextFlow;
 }
 
 function mapFlow(row) {
@@ -23,42 +30,58 @@ function mapFlow(row) {
   };
 }
 
-export async function listWalletFlowsByUserId(userId) {
+async function loadAllWalletFlowsFromMysql() {
   const ready = await ensurePersistenceReady();
   if (!ready) {
-    return db.walletFlows.filter((item) => item.userId === userId);
+    return [];
   }
 
-  const pool = getMysqlPool();
-  const [rows] = await pool.query(
-    'SELECT * FROM wallet_flows WHERE user_id = ? ORDER BY created_at DESC',
-    [userId]
-  );
-  return rows.map(mapFlow);
+  try {
+    const pool = getMysqlPool();
+    const [rows] = await pool.query('SELECT * FROM wallet_flows ORDER BY created_at DESC');
+    const flows = rows.map(mapFlow);
+    flows.forEach(syncMemoryFlow);
+    return flows;
+  } catch {
+    return [];
+  }
+}
+
+export async function listWalletFlowsByUserId(userId) {
+  if (db.walletFlows.length === 0) {
+    await loadAllWalletFlowsFromMysql();
+  }
+  return clone(db.walletFlows.filter((item) => item.userId === userId));
 }
 
 export async function createWalletFlowRecord(flow) {
-  syncMemoryFlow(flow);
+  const nextFlow = syncMemoryFlow(flow);
+  await saveSnapshot(db);
 
   const ready = await ensurePersistenceReady();
   if (!ready) {
-    return flow;
+    return clone(nextFlow);
   }
 
-  const pool = getMysqlPool();
-  await pool.query(
-    `INSERT INTO wallet_flows (
-      id, user_id, title, type, amount, balance_after, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [
-      flow.id,
-      flow.userId,
-      flow.title,
-      flow.type,
-      flow.amount,
-      flow.balanceAfter,
-      new Date(flow.createdAt || Date.now())
-    ]
-  );
-  return flow;
+  try {
+    const pool = getMysqlPool();
+    await pool.query(
+      `INSERT INTO wallet_flows (
+        id, user_id, title, type, amount, balance_after, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        nextFlow.id,
+        nextFlow.userId,
+        nextFlow.title,
+        nextFlow.type,
+        nextFlow.amount,
+        nextFlow.balanceAfter,
+        new Date(nextFlow.createdAt || Date.now())
+      ]
+    );
+  } catch {
+    return clone(nextFlow);
+  }
+
+  return clone(nextFlow);
 }

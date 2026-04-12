@@ -51,6 +51,10 @@ export function publishTask(token, data) {
   return request('/tasks', { method: 'POST', token, data });
 }
 
+export function cancelTask(token, taskId) {
+  return request(`/tasks/${taskId}/cancel`, { method: 'POST', token });
+}
+
 export function acceptTask(token, taskId) {
   return request(`/tasks/${taskId}/accept`, { method: 'POST', token });
 }
@@ -61,6 +65,10 @@ export function listOrders(token) {
 
 export function getProfileBundle(token) {
   return request('/profile/bundle', { token });
+}
+
+export function getPublicProfile(userId) {
+  return request(`/profile/${userId}`);
 }
 
 export function updateTaskStatus(token, taskId, status) {
@@ -83,8 +91,12 @@ export function withdrawWallet(token, amount) {
   return request('/wallet/withdraw', { method: 'POST', token, data: { amount } });
 }
 
-export function searchPlaces(keyword, campus) {
+export function searchPlaces(keyword, campus, location) {
   const query = new URLSearchParams({ keyword, campus, limit: 8 });
+  if (location?.latitude && location?.longitude) {
+    query.set('latitude', location.latitude);
+    query.set('longitude', location.longitude);
+  }
   return request(`/map/suggestions?${query}`);
 }
 
@@ -92,8 +104,20 @@ export function getRouteSummary(from, to) {
   return request('/map/route', { method: 'POST', data: { from, to } });
 }
 
+export function reverseGeocode(location, campus) {
+  return request('/map/reverse', { method: 'POST', data: { location, campus } });
+}
+
 export function listChatRooms(token) {
   return request('/chat/rooms', { token });
+}
+
+export function getUnreadCount(token) {
+  return request('/chat/unread-count', { token });
+}
+
+export function markRoomRead(token, roomId) {
+  return request(`/chat/rooms/${roomId}/read`, { method: 'POST', token });
 }
 
 export function createChatRoom(token, taskId) {
@@ -134,6 +158,10 @@ export function listAdminAppeals(token) {
 
 export function handleAppeal(token, appealId, action) {
   return request(`/admin/appeals/${appealId}/${action}`, { method: 'POST', token });
+}
+
+export function settleAppeal(token, appealId, payload) {
+  return request(`/admin/appeals/${appealId}/resolve`, { method: 'POST', token, data: payload });
 }
 
 export function getBlacklist(token) {

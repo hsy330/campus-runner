@@ -1,4 +1,5 @@
 import { db } from '../data/store.js';
+import { saveSnapshot } from '../lib/file-persist.js';
 import { getMysqlPool } from '../lib/mysql.js';
 import { ensurePersistenceReady } from './persistence.repository.js';
 
@@ -22,71 +23,85 @@ function mapReviewRow(row) {
 }
 
 function syncMemoryReview(review) {
-  const index = db.reviews.findIndex((item) => item.id === review.id);
+  const nextReview = clone(review);
+  const index = db.reviews.findIndex((item) => item.id === nextReview.id);
   if (index >= 0) {
-    db.reviews[index] = { ...db.reviews[index], ...review };
+    db.reviews[index] = { ...db.reviews[index], ...nextReview };
   } else {
-    db.reviews.unshift(clone(review));
+    db.reviews.unshift(nextReview);
+  }
+  return db.reviews.find((item) => item.id === nextReview.id) || nextReview;
+}
+
+async function loadAllReviewsFromMysql() {
+  const ready = await ensurePersistenceReady();
+  if (!ready) {
+    return [];
+  }
+
+  try {
+    const pool = getMysqlPool();
+    const [rows] = await pool.query('SELECT * FROM reviews ORDER BY created_at DESC');
+    const reviews = rows.map(mapReviewRow);
+    reviews.forEach(syncMemoryReview);
+    return reviews;
+  } catch {
+    return [];
   }
 }
 
 export async function createReviewRecord(review) {
-  syncMemoryReview(review);
+  const nextReview = syncMemoryReview(review);
+  await saveSnapshot(db);
+
   const ready = await ensurePersistenceReady();
   if (!ready) {
-    return review;
+    return clone(nextReview);
   }
 
-  const pool = getMysqlPool();
-  await pool.query(
-    `INSERT INTO reviews (
-      id, task_id, from_user_id, to_user_id, speed, attitude, quality, average_score, comment, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      review.id,
-      review.taskId,
-      review.fromUserId,
-      review.toUserId,
-      review.speed,
-      review.attitude,
-      review.quality,
-      review.average,
-      review.comment,
-      new Date(review.createdAt || Date.now())
-    ]
-  );
-  return review;
+  try {
+    const pool = getMysqlPool();
+    await pool.query(
+      `INSERT INTO reviews (
+        id, task_id, from_user_id, to_user_id, speed, attitude, quality, average_score, comment, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        nextReview.id,
+        nextReview.taskId,
+        nextReview.fromUserId,
+        nextReview.toUserId,
+        nextReview.speed,
+        nextReview.attitude,
+        nextReview.quality,
+        nextReview.average,
+        nextReview.comment,
+        new Date(nextReview.createdAt || Date.now())
+      ]
+    );
+  } catch {
+    return clone(nextReview);
+  }
+
+  return clone(nextReview);
 }
 
 export async function listReviewsByToUserId(userId) {
-  const ready = await ensurePersistenceReady();
-  if (!ready) {
-    return clone(db.reviews.filter((item) => item.toUserId === userId));
+  if (db.reviews.length === 0) {
+    await loadAllReviewsFromMysql();
   }
-
-  const pool = getMysqlPool();
-  const [rows] = await pool.query('SELECT * FROM reviews WHERE to_user_id = ? ORDER BY created_at DESC', [userId]);
-  return rows.map(mapReviewRow);
+  return clone(db.reviews.filter((item) => item.toUserId === userId));
 }
 
 export async function listReviewsByFromUserId(userId) {
-  const ready = await ensurePersistenceReady();
-  if (!ready) {
-    return clone(db.reviews.filter((item) => item.fromUserId === userId));
+  if (db.reviews.length === 0) {
+    await loadAllReviewsFromMysql();
   }
-
-  const pool = getMysqlPool();
-  const [rows] = await pool.query('SELECT * FROM reviews WHERE from_user_id = ? ORDER BY created_at DESC', [userId]);
-  return rows.map(mapReviewRow);
+  return clone(db.reviews.filter((item) => item.fromUserId === userId));
 }
 
 export async function findReviewByTaskAndFromUser(taskId, fromUserId) {
-  const ready = await ensurePersistenceReady();
-  if (!ready) {
-    return clone(db.reviews.find((item) => item.taskId === taskId && item.fromUserId === fromUserId) || null);
+  if (db.reviews.length === 0) {
+    await loadAllReviewsFromMysql();
   }
-
-  const pool = getMysqlPool();
-  const [rows] = await pool.query('SELECT * FROM reviews WHERE task_id = ? AND from_user_id = ? LIMIT 1', [taskId, fromUserId]);
-  return rows[0] ? mapReviewRow(rows[0]) : null;
+  return clone(db.reviews.find((item) => item.taskId === taskId && item.fromUserId === fromUserId) || null);
 }

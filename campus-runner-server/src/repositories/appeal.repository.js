@@ -1,4 +1,5 @@
 import { db } from '../data/store.js';
+import { saveSnapshot } from '../lib/file-persist.js';
 import { getMysqlPool } from '../lib/mysql.js';
 import { ensurePersistenceReady } from './persistence.repository.js';
 
@@ -21,86 +22,130 @@ function mapAppealRow(row) {
 }
 
 function syncMemoryAppeal(appeal) {
-  const index = db.appeals.findIndex((item) => item.id === appeal.id);
+  const nextAppeal = clone(appeal);
+  const index = db.appeals.findIndex((item) => item.id === nextAppeal.id);
   if (index >= 0) {
-    db.appeals[index] = { ...db.appeals[index], ...appeal };
+    db.appeals[index] = { ...db.appeals[index], ...nextAppeal };
   } else {
-    db.appeals.unshift(clone(appeal));
+    db.appeals.unshift(nextAppeal);
+  }
+  return db.appeals.find((item) => item.id === nextAppeal.id) || nextAppeal;
+}
+
+async function loadAllAppealsFromMysql() {
+  const ready = await ensurePersistenceReady();
+  if (!ready) {
+    return [];
+  }
+
+  try {
+    const pool = getMysqlPool();
+    const [rows] = await pool.query('SELECT * FROM appeals ORDER BY created_at DESC');
+    const appeals = rows.map(mapAppealRow);
+    appeals.forEach(syncMemoryAppeal);
+    return appeals;
+  } catch {
+    return [];
   }
 }
 
 export async function createAppealRecord(appeal) {
-  syncMemoryAppeal(appeal);
+  const nextAppeal = syncMemoryAppeal(appeal);
+  await saveSnapshot(db);
+
   const ready = await ensurePersistenceReady();
   if (!ready) {
-    return appeal;
+    return clone(nextAppeal);
   }
 
-  const pool = getMysqlPool();
-  await pool.query(
-    `INSERT INTO appeals (
-      id, task_id, from_user_id, from_role, reason, detail, status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      appeal.id,
-      appeal.taskId,
-      appeal.fromUserId,
-      appeal.fromRole,
-      appeal.reason,
-      appeal.detail,
-      appeal.status,
-      new Date(appeal.createdAt || Date.now()),
-      appeal.updatedAt ? new Date(appeal.updatedAt) : new Date(appeal.createdAt || Date.now())
-    ]
-  );
-  return appeal;
+  try {
+    const pool = getMysqlPool();
+    await pool.query(
+      `INSERT INTO appeals (
+        id, task_id, from_user_id, from_role, reason, detail, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        nextAppeal.id,
+        nextAppeal.taskId,
+        nextAppeal.fromUserId,
+        nextAppeal.fromRole,
+        nextAppeal.reason,
+        nextAppeal.detail,
+        nextAppeal.status,
+        new Date(nextAppeal.createdAt || Date.now()),
+        nextAppeal.updatedAt ? new Date(nextAppeal.updatedAt) : new Date(nextAppeal.createdAt || Date.now())
+      ]
+    );
+  } catch {
+    return clone(nextAppeal);
+  }
+
+  return clone(nextAppeal);
 }
 
 export async function listAppealRecords() {
-  const ready = await ensurePersistenceReady();
-  if (!ready) {
-    return clone(db.appeals);
+  if (db.appeals.length === 0) {
+    await loadAllAppealsFromMysql();
   }
+  return clone(
+    [...db.appeals].sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt))
+  );
+}
 
-  const pool = getMysqlPool();
-  const [rows] = await pool.query('SELECT * FROM appeals ORDER BY created_at DESC');
-  return rows.map(mapAppealRow);
+export async function findAppealRecordById(appealId) {
+  if (db.appeals.length === 0) {
+    await loadAllAppealsFromMysql();
+  }
+  return clone(db.appeals.find((item) => item.id === appealId) || null);
+}
+
+export async function listAppealRecordsByTaskId(taskId) {
+  if (db.appeals.length === 0) {
+    await loadAllAppealsFromMysql();
+  }
+  return clone(
+    db.appeals
+      .filter((item) => item.taskId === taskId)
+      .sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt))
+  );
 }
 
 export async function updateAppealRecord(appealId, patch) {
-  const ready = await ensurePersistenceReady();
-  let current;
-  if (!ready) {
-    current = db.appeals.find((item) => item.id === appealId) || null;
-  } else {
-    const pool = getMysqlPool();
-    const [rows] = await pool.query('SELECT * FROM appeals WHERE id = ? LIMIT 1', [appealId]);
-    current = rows[0] ? mapAppealRow(rows[0]) : null;
+  if (db.appeals.length === 0) {
+    await loadAllAppealsFromMysql();
   }
+
+  const current = db.appeals.find((item) => item.id === appealId) || null;
   if (!current) {
     return null;
   }
 
-  const next = { ...current, ...patch };
-  syncMemoryAppeal(next);
+  const nextAppeal = syncMemoryAppeal({ ...current, ...patch });
+  await saveSnapshot(db);
 
+  const ready = await ensurePersistenceReady();
   if (!ready) {
-    return next;
+    return clone(nextAppeal);
   }
 
-  const pool = getMysqlPool();
-  await pool.query(
-    `UPDATE appeals SET task_id = ?, from_user_id = ?, from_role = ?, reason = ?, detail = ?, status = ?, updated_at = ? WHERE id = ?`,
-    [
-      next.taskId,
-      next.fromUserId,
-      next.fromRole,
-      next.reason,
-      next.detail,
-      next.status,
-      new Date(next.updatedAt || Date.now()),
-      appealId
-    ]
-  );
-  return next;
+  try {
+    const pool = getMysqlPool();
+    await pool.query(
+      `UPDATE appeals SET task_id = ?, from_user_id = ?, from_role = ?, reason = ?, detail = ?, status = ?, updated_at = ? WHERE id = ?`,
+      [
+        nextAppeal.taskId,
+        nextAppeal.fromUserId,
+        nextAppeal.fromRole,
+        nextAppeal.reason,
+        nextAppeal.detail,
+        nextAppeal.status,
+        new Date(nextAppeal.updatedAt || Date.now()),
+        appealId
+      ]
+    );
+  } catch {
+    return clone(nextAppeal);
+  }
+
+  return clone(nextAppeal);
 }

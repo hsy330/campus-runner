@@ -1,5 +1,5 @@
 import { db, generateId } from '../data/store.js';
-import { createWalletFlow, getProfile } from './profile.service.js';
+import { applyWalletDelta, createWalletFlow, getProfile, roundAmount } from './profile.service.js';
 import { findUserById, updateUser } from '../repositories/user.repository.js';
 import {
   createTaskRecord,
@@ -20,8 +20,24 @@ import {
   findReviewByTaskAndFromUser,
   listReviewsByToUserId
 } from '../repositories/review.repository.js';
-import { createAppealRecord, listAppealRecords, updateAppealRecord } from '../repositories/appeal.repository.js';
+import {
+  createAppealRecord,
+  findAppealRecordById,
+  listAppealRecords,
+  listAppealRecordsByTaskId,
+  updateAppealRecord
+} from '../repositories/appeal.repository.js';
 import { scanTextForSensitiveWords } from './moderation.service.js';
+import { isBlacklisted } from './social.service.js';
+import { saveSnapshot } from '../lib/file-persist.js';
+import {
+  ORDER_STATUS,
+  PUBLISHER_ONLY_NEXT_STATUSES,
+  RUNNER_ONLY_NEXT_STATUSES,
+  TASK_ALLOWED_TRANSITIONS,
+  TASK_STATUS,
+  canAppealTaskStatus
+} from '../lib/task-status.js';
 
 const AUTO_APPROVE_TASKS = true;
 
@@ -36,12 +52,114 @@ function clone(data) {
   return JSON.parse(JSON.stringify(data));
 }
 
+function normalizeComparableText(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function getDisplayName(profile) {
+  if (!profile) {
+    return '匿名用户';
+  }
+  return profile.username || `用户${profile.id.slice(-4)}`;
+}
+
+function isDuplicateTask(task, userId, payload) {
+  return task.publisherId === userId &&
+    task.status === TASK_STATUS.OPEN &&
+    normalizeComparableText(task.title) === normalizeComparableText(payload.title) &&
+    normalizeComparableText(task.description) === normalizeComparableText(payload.description) &&
+    normalizeComparableText(task.pickupText) === normalizeComparableText(payload.pickupText) &&
+    normalizeComparableText(task.deliveryText) === normalizeComparableText(payload.deliveryText);
+}
+
+async function enrichTask(task) {
+  if (!task) {
+    return null;
+  }
+
+  const [publisher, runner] = await Promise.all([
+    task.publisherId ? findUserById(task.publisherId) : null,
+    task.runnerId ? findUserById(task.runnerId) : null
+  ]);
+
+  return {
+    ...task,
+    publisherName: task.publisherName || getDisplayName(publisher),
+    publisherAvatar: publisher?.avatar || '',
+    runnerName: task.runnerName || getDisplayName(runner),
+    runnerAvatar: runner?.avatar || ''
+  };
+}
+
+async function finishTaskSettlement(task, incomeTitle = '任务完成收入', expenseTitle = '任务完成扣款结算') {
+  const resolvedTask = task;
+  const runner = await findUserById(resolvedTask.runnerId);
+  if (runner) {
+    const completedCount = (runner.completedCount || 0) + 1;
+    await applyWalletDelta(runner.id, resolvedTask.price, {
+      title: incomeTitle,
+      type: 'income',
+      persistSnapshot: false
+    });
+    await updateUser(runner.id, { completedCount });
+  }
+
+  const publisher = await findUserById(resolvedTask.publisherId);
+  if (publisher) {
+    const completedCount = (publisher.completedCount || 0) + 1;
+    await updateUser(publisher.id, { completedCount });
+    await createWalletFlow(publisher.id, expenseTitle, 'expense', 0, publisher.wallet, false);
+  }
+}
+
+function resolveAppealAllocation(price, payload = {}) {
+  const refundTo = payload.refundTo || 'publisher';
+  if (!['publisher', 'runner', 'both'].includes(refundTo)) {
+    throw new Error('退款方式不合法');
+  }
+
+  let publisherAmount;
+  let runnerAmount;
+
+  if (refundTo === 'publisher') {
+    publisherAmount = price;
+    runnerAmount = 0;
+  } else if (refundTo === 'runner') {
+    publisherAmount = 0;
+    runnerAmount = price;
+  } else {
+    const publisherRaw = payload.publisherAmount ?? roundAmount(price / 2);
+    const runnerRaw = payload.runnerAmount ?? roundAmount(price - Number(publisherRaw || 0));
+    publisherAmount = roundAmount(publisherRaw);
+    runnerAmount = roundAmount(runnerRaw);
+  }
+
+  if (!Number.isFinite(publisherAmount) || !Number.isFinite(runnerAmount) || publisherAmount < 0 || runnerAmount < 0) {
+    throw new Error('积分分配金额不合法');
+  }
+  if (roundAmount(publisherAmount + runnerAmount) !== roundAmount(price)) {
+    throw new Error('发布方与接单方分配金额之和必须等于订单金额');
+  }
+
+  return {
+    refundTo,
+    publisherAmount,
+    runnerAmount
+  };
+}
+
+async function findPendingAppealByTaskId(taskId) {
+  const appeals = await listAppealRecordsByTaskId(taskId);
+  return appeals.find((item) => item.status === 'pending') || null;
+}
+
 export async function listTasks(campus, category, sort = 'latest') {
-  return clone(await listTasksByFilters(campus, category, sort));
+  const tasks = await listTasksByFilters(campus, category, sort);
+  return clone(await Promise.all(tasks.map((task) => enrichTask(task))));
 }
 
 export async function getTaskDetail(taskId) {
-  return clone(await findTaskById(taskId));
+  return clone(await enrichTask(await findTaskById(taskId)));
 }
 
 export async function publishTask(userId, payload) {
@@ -50,8 +168,13 @@ export async function publishTask(userId, payload) {
     throw new Error('用户不存在');
   }
 
-  const amount = Number(payload.price || 0);
+  const amount = roundAmount(payload.price || 0);
   validateSensitive(`${payload.title || ''} ${payload.description || ''}`);
+
+  const duplicateTask = db.tasks.find((item) => isDuplicateTask(item, userId, payload));
+  if (duplicateTask && !payload.forcePublish) {
+    throw new Error('检测到相同内容的待接单任务，请确认是否继续发布');
+  }
 
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new Error('积分报价必须大于 0');
@@ -60,9 +183,11 @@ export async function publishTask(userId, payload) {
     throw new Error('钱包余额不足，请先充值');
   }
 
-  const user = await findUserById(userId);
-  user.wallet -= amount;
-  await updateUser(userId, { wallet: user.wallet });
+  await applyWalletDelta(userId, -amount, {
+    title: '发布任务冻结积分',
+    type: 'freeze',
+    persistSnapshot: false
+  });
 
   const task = {
     id: generateId('task'),
@@ -76,13 +201,14 @@ export async function publishTask(userId, payload) {
     pickupLocation: payload.pickupLocation || null,
     deliveryLocation: payload.deliveryLocation || null,
     deadlineText: payload.deadlineText || '尽快',
-    distanceText: payload.distanceText || '待腾讯位置服务计算',
-    status: 'open',
+    distanceText: payload.distanceText || '待计算位置服务',
+    status: TASK_STATUS.OPEN,
     auditStatus: AUTO_APPROVE_TASKS ? 'approved' : 'pending',
     publisherId: profile.id,
-    publisherName: profile.nickname,
+    publisherName: getDisplayName(profile),
     images: Array.isArray(payload.images) ? payload.images : [],
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
   };
 
   await createTaskRecord(task);
@@ -100,7 +226,7 @@ export async function publishTask(userId, payload) {
     taskId: task.id,
     taskTitle: task.title,
     campus: task.campus,
-    status: 'open_waiting',
+    status: ORDER_STATUS.OPEN_WAITING,
     role: 'publisher',
     ownerRole: 'publisher',
     amount,
@@ -109,25 +235,33 @@ export async function publishTask(userId, payload) {
     updatedAt: new Date().toISOString(),
     createdAt: new Date().toISOString()
   });
-  await createWalletFlow(userId, '发布任务冻结积分', 'freeze', -amount, user.wallet);
+  await saveSnapshot(db);
 
-  return clone(task);
+  return clone(await enrichTask(task));
 }
 
 export async function acceptTask(userId, taskId) {
   const task = await findTaskById(taskId);
   const user = await getProfile(userId);
 
-  if (!task || task.status !== 'open' || task.auditStatus !== 'approved') {
+  if (!task || task.status !== TASK_STATUS.OPEN || task.auditStatus !== 'approved') {
     throw new Error('任务已不可接单');
   }
   if (task.publisherId === userId) {
     throw new Error('不能接自己发布的任务');
   }
+  if (!user) {
+    throw new Error('用户不存在');
+  }
 
-  task.status = 'accepted';
+  if (isBlacklisted(task.publisherId, userId) || isBlacklisted(userId, task.publisherId)) {
+    throw new Error('对方已在黑名单中，无法接单');
+  }
+
+  task.status = TASK_STATUS.ACCEPTED;
   task.runnerId = userId;
-  task.runnerName = user.nickname;
+  task.runnerName = getDisplayName(user);
+  task.updatedAt = new Date().toISOString();
   await updateTaskRecord(taskId, task);
 
   const timeoutAt = new Date(Date.now() + 90 * 60 * 1000).toISOString();
@@ -137,7 +271,7 @@ export async function acceptTask(userId, taskId) {
     taskId,
     taskTitle: task.title,
     campus: task.campus,
-    status: 'accepted',
+    status: ORDER_STATUS.ACCEPTED,
     role: 'runner',
     ownerRole: 'runner',
     amount: task.price,
@@ -150,27 +284,56 @@ export async function acceptTask(userId, taskId) {
   const publisherOrder = await findOrderByTaskAndRole(taskId, 'publisher');
   if (publisherOrder) {
     await updateOrderRecord(publisherOrder.id, {
-      status: 'accepted',
-      withUser: user.nickname,
+      status: ORDER_STATUS.ACCEPTED,
+      withUser: getDisplayName(user),
       timeoutAt,
       updatedAt: new Date().toISOString()
     });
   }
 
-  return clone(task);
+  await saveSnapshot(db);
+  return clone(await enrichTask(task));
+}
+
+export async function cancelTask(userId, taskId) {
+  const task = await findTaskById(taskId);
+  if (!task) {
+    throw new Error('任务不存在');
+  }
+  if (task.status !== TASK_STATUS.OPEN) {
+    throw new Error('只能取消待接单的任务');
+  }
+  if (task.publisherId !== userId) {
+    throw new Error('只有发布者可以取消任务');
+  }
+
+  const amount = roundAmount(task.price);
+  const updatedAt = new Date().toISOString();
+  await updateTaskRecord(taskId, { status: TASK_STATUS.CANCELLED, updatedAt });
+  await updateOrdersByTaskId(taskId, {
+    status: ORDER_STATUS.CANCELLED,
+    updatedAt
+  });
+  await applyWalletDelta(userId, amount, {
+    title: '取消任务退回积分',
+    type: 'refund',
+    persistSnapshot: false
+  });
+
+  task.status = TASK_STATUS.CANCELLED;
+  task.updatedAt = updatedAt;
+  await saveSnapshot(db);
+  return clone(await enrichTask(task));
 }
 
 export async function listOrders(userId) {
-  const orders = (await listOrdersByUserId(userId))
-    .map((item) => ({
+  const orders = await Promise.all(
+    (await listOrdersByUserId(userId)).map(async (item) => ({
       ...item,
-      reviewed: Boolean(awaitReviewExists(item.taskId, userId))
-    }));
+      reviewed: Boolean(await findReviewByTaskAndFromUser(item.taskId, userId))
+    }))
+  );
   return clone(orders);
-}
-
-function awaitReviewExists(taskId, userId) {
-  return db.reviews.some((review) => review.taskId === taskId && review.fromUserId === userId);
 }
 
 export async function updateTaskStatus(userId, taskId, nextStatus) {
@@ -179,55 +342,38 @@ export async function updateTaskStatus(userId, taskId, nextStatus) {
     throw new Error('任务不存在');
   }
 
-  const allowedTransitions = {
-    accepted: ['running'],
-    running: ['confirming'],
-    confirming: ['finished']
-  };
-
-  if (!allowedTransitions[task.status] || !allowedTransitions[task.status].includes(nextStatus)) {
+  if (!TASK_ALLOWED_TRANSITIONS[task.status] || !TASK_ALLOWED_TRANSITIONS[task.status].includes(nextStatus)) {
     throw new Error('当前状态不可流转');
   }
 
-  const runnerOnly = ['running', 'confirming'];
-  const publisherOnly = ['finished'];
-
-  if (runnerOnly.includes(nextStatus) && task.runnerId !== userId) {
+  if (RUNNER_ONLY_NEXT_STATUSES.includes(nextStatus) && task.runnerId !== userId) {
     throw new Error('只有接单者可以推进当前状态');
   }
 
-  if (publisherOnly.includes(nextStatus) && task.publisherId !== userId) {
+  if (PUBLISHER_ONLY_NEXT_STATUSES.includes(nextStatus) && task.publisherId !== userId) {
     throw new Error('只有发布者可以完成验收');
   }
 
   task.status = nextStatus;
-  if (nextStatus === 'confirming') {
-    task.confirmingAt = new Date().toISOString();
+  task.updatedAt = new Date().toISOString();
+  if (nextStatus === TASK_STATUS.CONFIRMING) {
+    task.confirmingAt = task.updatedAt;
+  }
+  if (nextStatus === TASK_STATUS.FINISHED) {
+    task.finishedAt = task.updatedAt;
   }
   await updateTaskRecord(taskId, task);
   await updateOrdersByTaskId(taskId, {
     status: nextStatus,
-    updatedAt: new Date().toISOString()
+    updatedAt: task.updatedAt
   });
 
-  if (nextStatus === 'finished') {
-    const runner = await findUserById(task.runnerId);
-    if (runner) {
-      runner.wallet += task.price;
-      runner.completedCount = (runner.completedCount || 0) + 1;
-      await updateUser(runner.id, { wallet: runner.wallet, completedCount: runner.completedCount });
-      await createWalletFlow(runner.id, '任务完成收入', 'income', task.price, runner.wallet);
-    }
-
-    const publisher = await findUserById(task.publisherId);
-    if (publisher) {
-      publisher.completedCount = (publisher.completedCount || 0) + 1;
-      await updateUser(publisher.id, { completedCount: publisher.completedCount });
-      await createWalletFlow(publisher.id, '任务完成扣款结算', 'expense', 0, publisher.wallet);
-    }
+  if (nextStatus === TASK_STATUS.FINISHED) {
+    await finishTaskSettlement(task);
   }
 
-  return clone(task);
+  await saveSnapshot(db);
+  return clone(await enrichTask(task));
 }
 
 export async function createTaskReview(userId, taskId, payload) {
@@ -236,7 +382,7 @@ export async function createTaskReview(userId, taskId, payload) {
     throw new Error('任务不存在');
   }
 
-  if (task.status !== 'finished') {
+  if (task.status !== TASK_STATUS.FINISHED) {
     throw new Error('只有已完成订单才能评价');
   }
 
@@ -287,6 +433,7 @@ export async function createTaskReview(userId, taskId, payload) {
   targetUser.rating = Number(avgRating.toFixed(1));
   await updateUser(targetUserId, { rating: targetUser.rating });
 
+  await saveSnapshot(db);
   return clone(review);
 }
 
@@ -294,6 +441,14 @@ export async function createTaskAppeal(userId, taskId, payload) {
   const task = await findTaskById(taskId);
   if (!task) {
     throw new Error('任务不存在');
+  }
+  if (!canAppealTaskStatus(task.status)) {
+    throw new Error('当前任务状态不支持申诉');
+  }
+
+  const existingPendingAppeal = await findPendingAppealByTaskId(taskId);
+  if (existingPendingAppeal) {
+    throw new Error('该任务已有待处理申诉，请勿重复提交');
   }
 
   const myOrder = await findOrderByTaskAndOwner(taskId, userId);
@@ -310,49 +465,183 @@ export async function createTaskAppeal(userId, taskId, payload) {
     throw new Error('请填写申诉说明');
   }
 
+  const taskStatusBeforeAppeal = task.status;
+  const appealTime = new Date().toISOString();
+  await updateTaskRecord(taskId, {
+    status: TASK_STATUS.APPEALING,
+    updatedAt: appealTime
+  });
+  await updateOrdersByTaskId(taskId, {
+    status: ORDER_STATUS.APPEALING,
+    updatedAt: appealTime
+  });
+
   const appeal = {
     id: generateId('appeal'),
     taskId,
+    taskPrice: task.price,
+    publisherId: task.publisherId,
+    runnerId: task.runnerId,
     fromUserId: userId,
-    fromRole: myOrder.role,
+    fromRole: myOrder.role || myOrder.ownerRole,
     reason,
     detail,
     status: 'pending',
-    createdAt: new Date().toISOString()
+    taskStatusBeforeAppeal,
+    createdAt: appealTime,
+    updatedAt: appealTime
   };
 
   await createAppealRecord(appeal);
+  await saveSnapshot(db);
   return clone(appeal);
+}
+
+export async function settleAppeal(appealId, payload = {}) {
+  const normalizedPayload = typeof payload === 'string' ? { refundTo: payload } : (payload || {});
+  const appeal = await findAppealRecordById(appealId);
+  if (!appeal) {
+    throw new Error('申诉工单不存在');
+  }
+  if (appeal.status !== 'pending') {
+    throw new Error('该申诉已处理');
+  }
+
+  const task = await findTaskById(appeal.taskId);
+  const price = roundAmount(task?.price || appeal.taskPrice || 0);
+  const publisherId = task?.publisherId || appeal.publisherId;
+  const runnerId = task?.runnerId || appeal.runnerId;
+  const { refundTo, publisherAmount, runnerAmount } = resolveAppealAllocation(price, normalizedPayload);
+  const wasFinished = (appeal.taskStatusBeforeAppeal || task?.status) === TASK_STATUS.FINISHED;
+
+  if (wasFinished) {
+    if (publisherAmount > 0 && publisherId && runnerId) {
+      await applyWalletDelta(runnerId, -publisherAmount, {
+        title: '申诉改判扣回积分',
+        type: 'expense',
+        allowNegative: true,
+        persistSnapshot: false
+      });
+      await applyWalletDelta(publisherId, publisherAmount, {
+        title: '申诉改判退回积分',
+        type: 'refund',
+        persistSnapshot: false
+      });
+    }
+  } else {
+    if (publisherAmount > 0 && publisherId) {
+      await applyWalletDelta(publisherId, publisherAmount, {
+        title: '申诉退回积分',
+        type: 'refund',
+        persistSnapshot: false
+      });
+    }
+    if (runnerAmount > 0 && runnerId) {
+      await applyWalletDelta(runnerId, runnerAmount, {
+        title: '申诉判定结算',
+        type: 'income',
+        persistSnapshot: false
+      });
+    }
+  }
+
+  const resolvedAt = new Date().toISOString();
+  const nextAppeal = await updateAppealRecord(appealId, {
+    status: 'resolved',
+    refundTo,
+    publisherAmount,
+    runnerAmount,
+    resolvedAt,
+    updatedAt: resolvedAt
+  });
+
+  if (task) {
+    await updateTaskRecord(task.id, {
+      status: TASK_STATUS.RESOLVED,
+      updatedAt: resolvedAt,
+      resolvedAt,
+      appealResolvedAt: resolvedAt
+    });
+    await updateOrdersByTaskId(task.id, {
+      status: ORDER_STATUS.RESOLVED,
+      updatedAt: resolvedAt
+    });
+  }
+
+  await saveSnapshot(db);
+  return clone(nextAppeal || { ...appeal, status: 'resolved', refundTo, publisherAmount, runnerAmount, resolvedAt });
+}
+
+export async function rejectAppeal(appealId) {
+  const appeal = await findAppealRecordById(appealId);
+  if (!appeal) {
+    throw new Error('申诉工单不存在');
+  }
+  if (appeal.status !== 'pending') {
+    throw new Error('该申诉已处理');
+  }
+
+  const resolvedAt = new Date().toISOString();
+  const nextAppeal = await updateAppealRecord(appealId, {
+    status: 'rejected',
+    resolvedAt,
+    updatedAt: resolvedAt
+  });
+
+  const task = await findTaskById(appeal.taskId);
+  const restoredStatus = appeal.taskStatusBeforeAppeal || TASK_STATUS.CONFIRMING;
+  if (task) {
+    await updateTaskRecord(task.id, {
+      status: restoredStatus,
+      updatedAt: resolvedAt
+    });
+    await updateOrdersByTaskId(task.id, {
+      status: restoredStatus,
+      updatedAt: resolvedAt
+    });
+  }
+
+  await saveSnapshot(db);
+  return clone(nextAppeal || { ...appeal, status: 'rejected', resolvedAt });
 }
 
 export async function listAppeals() {
   const appeals = await listAppealRecords();
-  return clone(
-    appeals.map((item) => {
-      const task = db.tasks.find((taskItem) => taskItem.id === item.taskId);
-      const fromUser = db.users.find((user) => user.id === item.fromUserId);
-      return {
-        ...item,
-        taskTitle: task ? task.title : '订单任务',
-        fromUserName: fromUser ? fromUser.nickname : '匿名同学'
-      };
-    })
-  );
+  const enrichedAppeals = await Promise.all(appeals.map(async (item) => {
+    const task = await findTaskById(item.taskId);
+    const publisherId = task?.publisherId || item.publisherId;
+    const runnerId = task?.runnerId || item.runnerId;
+    const [fromUser, publisher, runner] = await Promise.all([
+      findUserById(item.fromUserId),
+      publisherId ? findUserById(publisherId) : null,
+      runnerId ? findUserById(runnerId) : null
+    ]);
+
+    return {
+      ...item,
+      taskTitle: task ? task.title : '订单任务',
+      taskPrice: task ? task.price : item.taskPrice || 0,
+      taskStatus: task?.status || item.taskStatusBeforeAppeal || TASK_STATUS.APPEALING,
+      publisherId,
+      runnerId,
+      publisherName: publisher ? publisher.username : '发布方',
+      runnerName: runner ? runner.username : '接单方',
+      fromUserName: fromUser ? fromUser.username : '匿名同学'
+    };
+  }));
+
+  return clone(enrichedAppeals);
 }
 
 export async function handleAppeal(appealId, status) {
-  if (!['resolved', 'rejected'].includes(status)) {
-    throw new Error('处理结果不合法');
+  if (status === 'rejected') {
+    return rejectAppeal(appealId);
+  }
+  if (status === 'resolved') {
+    return settleAppeal(appealId, 'publisher');
   }
 
-  const appeal = await updateAppealRecord(appealId, {
-    status,
-    updatedAt: new Date().toISOString()
-  });
-  if (!appeal) {
-    throw new Error('申诉工单不存在');
-  }
-  return clone(appeal);
+  throw new Error('处理结果不合法');
 }
 
 export function listModerationLogs() {
@@ -366,9 +655,11 @@ export async function approveTask(taskId) {
     throw new Error('任务不存在');
   }
   task.auditStatus = 'approved';
-  await updateTaskRecord(taskId, { auditStatus: 'approved' });
+  task.updatedAt = new Date().toISOString();
+  await updateTaskRecord(taskId, { auditStatus: 'approved', updatedAt: task.updatedAt });
   if (log) {
     log.status = 'approved';
   }
-  return clone(task);
+  await saveSnapshot(db);
+  return clone(await enrichTask(task));
 }

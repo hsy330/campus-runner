@@ -1,6 +1,11 @@
+import crypto from 'crypto';
+
 import { db, generateId } from '../data/store.js';
+import { env } from '../config/env.js';
 
 const ADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const ADMIN_PASSWORD_KEY_BYTES = 64;
+const ADMIN_PASSWORD_DIGEST = 'sha512';
 
 function getAdminSessions() {
   if (!Array.isArray(db.adminSessions)) {
@@ -13,11 +18,42 @@ function getTokenFromRequest(req) {
   return req.headers.authorization?.replace('Bearer ', '') || '';
 }
 
+function hashAdminPassword(password, salt) {
+  const nextSalt = salt || `admin:${env.admin.username || 'local'}`;
+  const derived = crypto.pbkdf2Sync(password, nextSalt, 120000, ADMIN_PASSWORD_KEY_BYTES, ADMIN_PASSWORD_DIGEST).toString('hex');
+  return `${nextSalt}:${derived}`;
+}
+
+function verifyAdminPassword(password, passwordHash) {
+  const [salt, hash] = String(passwordHash || '').split(':');
+  if (!salt || !hash) {
+    return false;
+  }
+
+  const calculated = crypto.pbkdf2Sync(password, salt, 120000, ADMIN_PASSWORD_KEY_BYTES, ADMIN_PASSWORD_DIGEST).toString('hex');
+  return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(calculated, 'hex'));
+}
+
+function resolveAdminUsers() {
+  if (env.admin.username && (env.admin.passwordHash || env.admin.password)) {
+    return [
+      {
+        id: 'admin_env',
+        username: env.admin.username,
+        passwordHash: env.admin.passwordHash || hashAdminPassword(env.admin.password, `admin:${env.admin.username}`),
+        name: env.admin.name
+      }
+    ];
+  }
+
+  return db.adminUsers || [];
+}
+
 export function adminLogin(username, password) {
-  const user = (db.adminUsers || []).find(
-    (item) => item.username === String(username || '').trim() && item.password === String(password || '')
-  );
-  if (!user) {
+  const normalizedUsername = String(username || '').trim();
+  const normalizedPassword = String(password || '');
+  const user = resolveAdminUsers().find((item) => item.username === normalizedUsername);
+  if (!user || !verifyAdminPassword(normalizedPassword, user.passwordHash)) {
     throw new Error('管理员账号或密码错误');
   }
 
@@ -54,7 +90,7 @@ export function verifyAdminToken(token) {
     return null;
   }
 
-  const user = (db.adminUsers || []).find((item) => item.id === session.userId);
+  const user = resolveAdminUsers().find((item) => item.id === session.userId);
   if (!user) {
     adminLogout(token);
     return null;
