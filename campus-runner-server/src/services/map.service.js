@@ -190,19 +190,50 @@ function normalizeText(value) {
   return String(value || '')
     .trim()
     .toLowerCase()
+    .replace(/[（）()]/g, '')
+    .replace(/[-_\s]+/g, '')
+    .replace(/一栋|1号楼/g, '1栋')
+    .replace(/二栋|2号楼/g, '2栋')
+    .replace(/三栋|3号楼/g, '3栋')
+    .replace(/四栋|4号楼/g, '4栋')
+    .replace(/五栋|5号楼/g, '5栋')
+    .replace(/六栋|6号楼/g, '6栋')
+    .replace(/七栋|7号楼/g, '7栋')
+    .replace(/八栋|8号楼/g, '8栋')
+    .replace(/九栋|9号楼/g, '9栋')
+    .replace(/十栋|10号楼/g, '10栋')
+    .replace(/十一栋|11号楼/g, '11栋')
+    .replace(/十二栋|12号楼/g, '12栋')
+    .replace(/十三栋|13号楼/g, '13栋')
+    .replace(/十四栋|14号楼/g, '14栋')
+    .replace(/十五栋|15号楼/g, '15栋')
     .replace(/幢/g, '栋')
     .replace(/号楼/g, '栋')
     .replace(/寝室/g, '宿舍')
     .replace(/宿舍楼/g, '宿舍')
     .replace(/快递站/g, '驿站')
     .replace(/菜鸟/g, '驿站')
+    .replace(/东门/g, '东入口')
+    .replace(/西门/g, '西入口')
+    .replace(/南门/g, '南入口')
+    .replace(/北门/g, '北入口')
+    .replace(/一楼大厅/g, '')
+    .replace(/二楼自习区/g, '')
+    .replace(/东侧阅览室/g, '')
+    .replace(/主入口/g, '')
+    .replace(/门厅/g, '')
+    .replace(/楼下快递柜/g, '快递柜')
     .replace(/一食堂/g, '第一食堂')
     .replace(/二食堂/g, '第二食堂')
     .replace(/三食堂/g, '第三食堂')
     .replace(/教学楼a/g, '教学楼a栋')
     .replace(/教学楼b/g, '教学楼b栋')
     .replace(/教学楼c/g, '教学楼c栋')
-    .replace(/教学楼d/g, '教学楼d栋');
+    .replace(/教学楼d/g, '教学楼d栋')
+    .replace(/a栋/g, 'a栋')
+    .replace(/b栋/g, 'b栋')
+    .replace(/c栋/g, 'c栋')
+    .replace(/d栋/g, 'd栋');
 }
 
 function toRadians(value) {
@@ -266,7 +297,7 @@ function getNearestPoi(location, campus) {
 }
 
 function scorePoi(poi, keyword) {
-  const target = `${poi.title} ${poi.address} ${(poi.aliases || []).join(' ')}`.toLowerCase();
+  const target = normalizeText(`${poi.title} ${poi.address} ${(poi.aliases || []).join(' ')}`);
   if (!keyword) {
     return 0;
   }
