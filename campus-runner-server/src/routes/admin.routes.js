@@ -364,7 +364,11 @@ router.get('/admin/appeals', async (req, res, next) => {
 
 router.post('/admin/appeals/:id/settle', async (req, res, next) => {
   try {
-    const data = await settleAppeal(req.params.id, req.body || {});
+    const admin = requireAdmin(req);
+    const data = await settleAppeal(req.params.id, {
+      ...(req.body || {}),
+      decisionBy: admin.name || admin.username
+    });
     res.json({ data, message: '申诉已处理并退款' });
   } catch (error) {
     next(error);
@@ -373,7 +377,11 @@ router.post('/admin/appeals/:id/settle', async (req, res, next) => {
 
 router.post('/admin/appeals/:id/resolve', async (req, res, next) => {
   try {
-    const data = await settleAppeal(req.params.id, req.body || {});
+    const admin = requireAdmin(req);
+    const data = await settleAppeal(req.params.id, {
+      ...(req.body || {}),
+      decisionBy: admin.name || admin.username
+    });
     res.json({ data, message: '申诉已处理并退款' });
   } catch (error) {
     next(error);

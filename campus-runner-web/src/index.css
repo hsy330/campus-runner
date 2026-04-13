@@ -1261,6 +1261,38 @@ button {
   font-size: 12px;
 }
 
+.campus-map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.legend-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.legend-chip--teaching { background: #dbeafe; color: #1d4ed8; }
+.legend-chip--dorm { background: #fee2e2; color: #b91c1c; }
+.legend-chip--canteen { background: #fef3c7; color: #b45309; }
+.legend-chip--library { background: #dcfce7; color: #15803d; }
+
+.campus-feature-tooltip {
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  color: #0f172a;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+}
+
 .detail-user-row {
   display: flex;
   gap: 12px;
@@ -1536,6 +1568,35 @@ button {
   height: 36px;
   padding: 0 10px;
   font-size: 13px;
+}
+
+.appeal-decision-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 8px;
+}
+
+.appeal-decision-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.appeal-decision-preview {
+  font-size: 12px;
+}
+
+.appeal-decision-result {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
 @media (max-width: 768px) {

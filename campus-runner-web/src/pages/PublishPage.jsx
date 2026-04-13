@@ -4,6 +4,7 @@ import { MapContainer, Marker, Popup, useMapEvents } from 'react-leaflet';
 import { Coins, Crosshair, ImagePlus, MapPinned, Search } from 'lucide-react';
 import L from 'leaflet';
 
+import { CampusFeatureLayer } from '../components/CampusFeatureLayer.jsx';
 import { MapLibreBaseLayer } from '../components/MapLibreBaseLayer.jsx';
 import { getRouteSummary, publishTask, reverseGeocode, searchPlaces } from '../lib/api.js';
 import { useAuth } from '../auth.jsx';
@@ -299,11 +300,18 @@ export function PublishPage() {
                 key={mapCenter.join(',')}
               >
                 <MapLibreBaseLayer />
+                <CampusFeatureLayer campus={user?.campus || DEFAULT_CAMPUS} />
                 <LocationPicker onSelect={handleMapClick} />
                 {pickupLoc && <Marker position={[pickupLoc.latitude, pickupLoc.longitude]}><Popup>起点：{form.pickupText}</Popup></Marker>}
                 {deliveryLoc && <Marker position={[deliveryLoc.latitude, deliveryLoc.longitude]}><Popup>终点：{form.deliveryText}</Popup></Marker>}
                 {myLocation && <Marker position={[myLocation.latitude, myLocation.longitude]}><Popup>我的位置</Popup></Marker>}
               </MapContainer>
+            </div>
+            <div className="campus-map-legend">
+              <span className="legend-chip legend-chip--teaching">教学楼</span>
+              <span className="legend-chip legend-chip--dorm">宿舍</span>
+              <span className="legend-chip legend-chip--canteen">食堂</span>
+              <span className="legend-chip legend-chip--library">图书馆</span>
             </div>
             <p className="subtle">点击地图选取{selectingField === 'pickup' ? '起点' : '终点'}位置</p>
           </div>

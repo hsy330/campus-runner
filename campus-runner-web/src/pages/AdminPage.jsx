@@ -867,7 +867,8 @@ function AppealsPanel({ token }) {
               next[appeal.id] = {
                 refundTo: 'publisher',
                 publisherAmount: price.toFixed(2),
-                runnerAmount: '0.00'
+                runnerAmount: '0.00',
+                note: ''
               };
             }
           });
@@ -888,10 +889,24 @@ function AppealsPanel({ token }) {
     try {
       if (action === 'resolved') {
         const rule = refundRules[id];
+        const appeal = appeals.find((item) => item.id === id);
+        const publisherAmount = Number(rule?.publisherAmount || 0);
+        const runnerAmount = Number(rule?.runnerAmount || 0);
+        const total = Number((publisherAmount + runnerAmount).toFixed(2));
+        const frozenAmount = Number(Number(appeal?.frozenAmount || appeal?.taskPrice || 0).toFixed(2));
+        if (publisherAmount < 0 || runnerAmount < 0) {
+          alert('积分分配不能小于 0');
+          return;
+        }
+        if (total !== frozenAmount) {
+          alert(`发布方与接单方分配之和必须等于冻结积分池 ${formatAmount(frozenAmount)} 积分`);
+          return;
+        }
         await settleAppeal(token, id, {
           refundTo: rule?.refundTo || 'publisher',
-          publisherAmount: Number(rule?.publisherAmount || 0),
-          runnerAmount: Number(rule?.runnerAmount || 0)
+          publisherAmount,
+          runnerAmount,
+          note: rule?.note || ''
         });
       } else {
         await handleAppeal(token, id, 'reject');
@@ -908,21 +923,24 @@ function AppealsPanel({ token }) {
       return {
         refundTo,
         publisherAmount: price.toFixed(2),
-        runnerAmount: '0.00'
+        runnerAmount: '0.00',
+        note: ''
       };
     }
     if (refundTo === 'runner') {
       return {
         refundTo,
         publisherAmount: '0.00',
-        runnerAmount: price.toFixed(2)
+        runnerAmount: price.toFixed(2),
+        note: ''
       };
     }
     const publisherAmount = (price / 2).toFixed(2);
     return {
       refundTo,
       publisherAmount,
-      runnerAmount: (price - Number(publisherAmount)).toFixed(2)
+      runnerAmount: (price - Number(publisherAmount)).toFixed(2),
+      note: ''
     };
   }
 
@@ -975,6 +993,11 @@ function AppealsPanel({ token }) {
               <td className="admin-td-actions">
                 {a.status === 'pending' && (
                   <>
+                    <div className="appeal-decision-box">
+                      <div className="appeal-decision-summary">
+                        <strong>冻结积分池：{formatAmount(a.frozenAmount || a.taskPrice)} 积分</strong>
+                        <span className="subtle">判定本笔冻结积分最终流向</span>
+                      </div>
                     <select
                       value={refundRules[a.id]?.refundTo || 'publisher'}
                       onChange={(event) => setRefundRules((prev) => ({
@@ -982,9 +1005,9 @@ function AppealsPanel({ token }) {
                         [a.id]: applyRefundPreset(a, event.target.value)
                       }))}
                     >
-                      <option value="publisher">退回给发布方</option>
-                      <option value="runner">退回给接单方</option>
-                      <option value="both">双方各退一部分</option>
+                      <option value="publisher">全部退回发布方</option>
+                      <option value="runner">全部释放给接单者</option>
+                      <option value="both">发布方/接单者部分分配</option>
                     </select>
                     <input
                       type="number"
@@ -1014,9 +1037,34 @@ function AppealsPanel({ token }) {
                       }))}
                       placeholder="接单方积分"
                     />
+                    <textarea
+                      rows={2}
+                      placeholder="裁决说明，例如：发布方责任更大，退回 1.50 积分，接单者释放 0.72 积分"
+                      value={refundRules[a.id]?.note || ''}
+                      onChange={(event) => setRefundRules((prev) => ({
+                        ...prev,
+                        [a.id]: {
+                          ...(prev[a.id] || applyRefundPreset(a, 'publisher')),
+                          note: event.target.value
+                        }
+                      }))}
+                    />
+                    <div className="appeal-decision-preview subtle">
+                      发布方退回 {formatAmount(refundRules[a.id]?.publisherAmount || 0)} 积分，
+                      接单者释放 {formatAmount(refundRules[a.id]?.runnerAmount || 0)} 积分
+                    </div>
+                    </div>
                     <button className="admin-action-btn admin-action-green" onClick={() => handleAction(a.id, 'resolved')}>通过</button>
                     <button className="admin-action-btn admin-action-red" onClick={() => handleAction(a.id, 'rejected')}>驳回</button>
                   </>
+                )}
+                {a.status === 'resolved' && (
+                  <div className="appeal-decision-result">
+                    <div>发布方退回：{formatAmount(a.publisherAmount || 0)} 积分</div>
+                    <div>接单者释放：{formatAmount(a.runnerAmount || 0)} 积分</div>
+                    {a.decisionBy ? <div>裁决人：{a.decisionBy}</div> : null}
+                    {a.decisionNote ? <div>说明：{a.decisionNote}</div> : null}
+                  </div>
                 )}
               </td>
             </tr>

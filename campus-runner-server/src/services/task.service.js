@@ -556,6 +556,8 @@ export async function settleAppeal(appealId, payload = {}) {
   const runnerId = task?.runnerId || appeal.runnerId;
   const { refundTo, publisherAmount, runnerAmount } = resolveAppealAllocation(price, normalizedPayload);
   const wasFinished = (appeal.taskStatusBeforeAppeal || task?.status) === TASK_STATUS.FINISHED;
+  const decisionNote = String(normalizedPayload.note || '').trim();
+  const decisionBy = String(normalizedPayload.decisionBy || '').trim();
 
   if (wasFinished) {
     if (publisherAmount > 0 && publisherId && runnerId) {
@@ -594,6 +596,8 @@ export async function settleAppeal(appealId, payload = {}) {
     refundTo,
     publisherAmount,
     runnerAmount,
+    decisionNote,
+    decisionBy,
     resolvedAt,
     updatedAt: resolvedAt
   });
@@ -612,7 +616,16 @@ export async function settleAppeal(appealId, payload = {}) {
   }
 
   await saveSnapshot(db);
-  return clone(nextAppeal || { ...appeal, status: 'resolved', refundTo, publisherAmount, runnerAmount, resolvedAt });
+  return clone(nextAppeal || {
+    ...appeal,
+    status: 'resolved',
+    refundTo,
+    publisherAmount,
+    runnerAmount,
+    decisionNote,
+    decisionBy,
+    resolvedAt
+  });
 }
 
 export async function rejectAppeal(appealId) {
@@ -627,6 +640,7 @@ export async function rejectAppeal(appealId) {
   const resolvedAt = new Date().toISOString();
   const nextAppeal = await updateAppealRecord(appealId, {
     status: 'rejected',
+    decisionNote: '',
     resolvedAt,
     updatedAt: resolvedAt
   });
@@ -670,7 +684,8 @@ export async function listAppeals() {
       publisherName: publisher ? publisher.username : '发布方',
       runnerName: runner ? runner.username : '接单方',
       fromUserName: fromUser ? fromUser.username : '匿名同学',
-      canCancel: item.status === 'pending'
+      canCancel: item.status === 'pending',
+      frozenAmount: task ? task.price : item.taskPrice || 0
     };
   }));
 

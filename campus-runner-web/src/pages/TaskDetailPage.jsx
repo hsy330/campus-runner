@@ -5,6 +5,7 @@ import { BadgeCheck, ShieldAlert, Star } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
+import { CampusFeatureLayer } from '../components/CampusFeatureLayer.jsx';
 import { MapLibreBaseLayer } from '../components/MapLibreBaseLayer.jsx';
 import { UserAvatar } from '../components/UserAvatar.jsx';
 import { acceptTask, cancelAppeal, cancelTask, getPublicProfile, getTaskDetail, updateTaskStatus } from '../lib/api.js';
@@ -195,10 +196,17 @@ export function TaskDetailPage() {
               style={{ height: 280, borderRadius: 12 }}
             >
               <MapLibreBaseLayer />
+              <CampusFeatureLayer campus={task.campus} />
               <Marker position={pickupPos}><Popup>起点：{task.pickupText}</Popup></Marker>
               {deliveryPos && <Marker position={deliveryPos}><Popup>终点：{task.deliveryText}</Popup></Marker>}
               {routeLine.length === 2 && <Polyline positions={routeLine} color="#2563eb" weight={3} dashArray="8 4" />}
             </MapContainer>
+          </div>
+          <div className="campus-map-legend">
+            <span className="legend-chip legend-chip--teaching">教学楼</span>
+            <span className="legend-chip legend-chip--dorm">宿舍</span>
+            <span className="legend-chip legend-chip--canteen">食堂</span>
+            <span className="legend-chip legend-chip--library">图书馆</span>
           </div>
         </div>
       )}
