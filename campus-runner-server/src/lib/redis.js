@@ -11,7 +11,11 @@ export function getRedisClient() {
       port: env.redis.port,
       password: env.redis.password || undefined,
       lazyConnect: true,
-      maxRetriesPerRequest: 1
+      maxRetriesPerRequest: 1,
+      retryStrategy: () => null
+    });
+    client.on('error', () => {
+      // Redis is optional in local/dev mode. Errors are surfaced by callers via ping checks.
     });
   }
   return client;

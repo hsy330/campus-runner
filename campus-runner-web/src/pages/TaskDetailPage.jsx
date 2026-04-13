@@ -7,7 +7,7 @@ import 'leaflet/dist/leaflet.css';
 
 import { MapLibreBaseLayer } from '../components/MapLibreBaseLayer.jsx';
 import { UserAvatar } from '../components/UserAvatar.jsx';
-import { acceptTask, cancelTask, getPublicProfile, getTaskDetail, updateTaskStatus } from '../lib/api.js';
+import { acceptTask, cancelAppeal, cancelTask, getPublicProfile, getTaskDetail, updateTaskStatus } from '../lib/api.js';
 import { UserProfileModal } from '../components/UserProfileModal.jsx';
 import { StartChatButton } from './ChatPage.jsx';
 import { useAuth } from '../auth.jsx';
@@ -78,6 +78,8 @@ export function TaskDetailPage() {
     try {
       if (action === 'accept') {
         await acceptTask(token, taskId);
+      } else if (action === 'cancel-appeal') {
+        await cancelAppeal(token, taskId);
       } else if (action === 'cancel') {
         await cancelTask(token, taskId);
       } else {
@@ -113,6 +115,7 @@ export function TaskDetailPage() {
     TASK_STATUS.CONFIRMING,
     TASK_STATUS.FINISHED
   ].includes(task.status);
+  const canCancelAppeal = task.status === TASK_STATUS.APPEALING && task.pendingAppeal?.fromUserId === user?.id;
 
   const statusLabel = TASK_STATUS_LABELS[task.status] || task.status;
   const statusColor = TASK_STATUS_COLORS[task.status] || '#64748b';
@@ -251,6 +254,11 @@ export function TaskDetailPage() {
         )}
         {canAppeal && (
           <button className="btn-ghost" onClick={() => navigate(`/tasks/${taskId}/appeal`)}><ShieldAlert size={16} /> 申诉</button>
+        )}
+        {canCancelAppeal && (
+          <button className="btn-ghost" onClick={() => handleAction('cancel-appeal')} disabled={!!actionLoading}>
+            {actionLoading === 'cancel-appeal' ? '取消中...' : '取消申诉'}
+          </button>
         )}
         <button className="btn-ghost" onClick={() => navigate(-1)}>返回</button>
       </div>

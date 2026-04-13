@@ -77,9 +77,10 @@ async function enrichTask(task) {
     return null;
   }
 
-  const [publisher, runner] = await Promise.all([
+  const [publisher, runner, pendingAppeal] = await Promise.all([
     task.publisherId ? findUserById(task.publisherId) : null,
-    task.runnerId ? findUserById(task.runnerId) : null
+    task.runnerId ? findUserById(task.runnerId) : null,
+    findPendingAppealByTaskId(task.id)
   ]);
 
   return {
@@ -87,7 +88,14 @@ async function enrichTask(task) {
     publisherName: task.publisherName || getDisplayName(publisher),
     publisherAvatar: publisher?.avatar || '',
     runnerName: task.runnerName || getDisplayName(runner),
-    runnerAvatar: runner?.avatar || ''
+    runnerAvatar: runner?.avatar || '',
+    pendingAppeal: pendingAppeal ? {
+      id: pendingAppeal.id,
+      fromUserId: pendingAppeal.fromUserId,
+      fromRole: pendingAppeal.fromRole,
+      reason: pendingAppeal.reason,
+      createdAt: pendingAppeal.createdAt
+    } : null
   };
 }
 
@@ -497,6 +505,41 @@ export async function createTaskAppeal(userId, taskId, payload) {
   return clone(appeal);
 }
 
+export async function cancelTaskAppeal(userId, taskId) {
+  const task = await findTaskById(taskId);
+  if (!task) {
+    throw new Error('任务不存在');
+  }
+
+  const pendingAppeal = await findPendingAppealByTaskId(taskId);
+  if (!pendingAppeal) {
+    throw new Error('当前没有可取消的申诉');
+  }
+  if (pendingAppeal.fromUserId !== userId) {
+    throw new Error('只有申诉发起人可以取消申诉');
+  }
+
+  const cancelledAt = new Date().toISOString();
+  const restoredStatus = pendingAppeal.taskStatusBeforeAppeal || TASK_STATUS.CONFIRMING;
+  const nextAppeal = await updateAppealRecord(pendingAppeal.id, {
+    status: 'cancelled',
+    cancelledAt,
+    updatedAt: cancelledAt
+  });
+
+  await updateTaskRecord(taskId, {
+    status: restoredStatus,
+    updatedAt: cancelledAt
+  });
+  await updateOrdersByTaskId(taskId, {
+    status: restoredStatus,
+    updatedAt: cancelledAt
+  });
+
+  await saveSnapshot(db);
+  return clone(nextAppeal || { ...pendingAppeal, status: 'cancelled', cancelledAt });
+}
+
 export async function settleAppeal(appealId, payload = {}) {
   const normalizedPayload = typeof payload === 'string' ? { refundTo: payload } : (payload || {});
   const appeal = await findAppealRecordById(appealId);
@@ -626,7 +669,8 @@ export async function listAppeals() {
       runnerId,
       publisherName: publisher ? publisher.username : '发布方',
       runnerName: runner ? runner.username : '接单方',
-      fromUserName: fromUser ? fromUser.username : '匿名同学'
+      fromUserName: fromUser ? fromUser.username : '匿名同学',
+      canCancel: item.status === 'pending'
     };
   }));
 

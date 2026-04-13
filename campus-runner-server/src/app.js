@@ -1,5 +1,6 @@
 import cors from 'cors';
 import express from 'express';
+import { existsSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -21,6 +22,8 @@ const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const publicDir = path.resolve(__dirname, '../public');
+const webDistDir = path.resolve(__dirname, '../../campus-runner-web/dist');
+const webIndexFile = path.join(webDistDir, 'index.html');
 
 app.use(cors());
 app.use(express.json({ limit: '5mb' }));
@@ -42,26 +45,60 @@ app.use('/api', socialRoutes);
 app.use('/api', systemRoutes);
 app.use('/api/auth', authRoutes);
 
-// Serve built frontend in production
-const webDistDir = path.resolve(__dirname, '../../campus-runner-web/dist');
 app.use(express.static(webDistDir));
-app.get('*', (req, res, next) => {
-  if (req.path.startsWith('/api') || req.path.startsWith('/admin')) {
-    return next();
-  }
-  res.sendFile(path.join(webDistDir, 'index.html'));
+app.get('/legacy-admin', (req, res) => {
+  res.redirect('/legacy-admin/login');
+});
+
+app.get('/legacy-admin/login', (req, res) => {
+  res.sendFile(path.join(publicDir, 'admin', 'login.html'));
+});
+
+app.get('/legacy-admin/dashboard', (req, res) => {
+  res.sendFile(path.join(publicDir, 'admin', 'dashboard.html'));
 });
 
 app.get('/admin', (req, res) => {
-  res.redirect('/admin/login');
+  if (existsSync(webIndexFile)) {
+    res.sendFile(webIndexFile);
+    return;
+  }
+  res.sendFile(path.join(publicDir, 'admin', 'login.html'));
 });
 
 app.get('/admin/login', (req, res) => {
+  if (existsSync(webIndexFile)) {
+    res.sendFile(webIndexFile);
+    return;
+  }
   res.sendFile(path.join(publicDir, 'admin', 'login.html'));
 });
 
 app.get('/admin/dashboard', (req, res) => {
+  if (existsSync(webIndexFile)) {
+    res.sendFile(webIndexFile);
+    return;
+  }
   res.sendFile(path.join(publicDir, 'admin', 'dashboard.html'));
+});
+
+app.get('/admin/*', (req, res) => {
+  if (existsSync(webIndexFile)) {
+    res.sendFile(webIndexFile);
+    return;
+  }
+  res.sendFile(path.join(publicDir, 'admin', 'login.html'));
+});
+
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api')) {
+    return next();
+  }
+  if (existsSync(webIndexFile)) {
+    res.sendFile(webIndexFile);
+    return;
+  }
+  next();
 });
 
 app.use((error, req, res, next) => {

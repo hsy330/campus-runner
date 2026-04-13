@@ -93,6 +93,99 @@ const CAMPUS_POI_MAP = {
   }
 };
 
+function pushPoi(profile, poi) {
+  if (!profile.pois.some((item) => item.title === poi.title && item.address === poi.address)) {
+    profile.pois.push(poi);
+  }
+}
+
+function createPoi(title, address, latitude, longitude, aliases = []) {
+  return { title, address, latitude, longitude, aliases };
+}
+
+function createDirectionalPoints(basePoi, placeLabel, aliases = []) {
+  const directions = [
+    { name: '东入口', latOffset: 0.00002, lngOffset: 0.00018 },
+    { name: '西入口', latOffset: -0.00002, lngOffset: -0.00018 },
+    { name: '南入口', latOffset: -0.00018, lngOffset: 0.00002 },
+    { name: '北入口', latOffset: 0.00018, lngOffset: -0.00002 }
+  ];
+
+  return directions.map((direction) => createPoi(
+    `${basePoi.title}${direction.name}`,
+    `${placeLabel}${direction.name}`,
+    Number(basePoi.latitude) + direction.latOffset,
+    Number(basePoi.longitude) + direction.lngOffset,
+    aliases
+  ));
+}
+
+function createFloorPoints(basePoi, maxFloor, addressPrefix, aliases = []) {
+  return Array.from({ length: maxFloor }, (_, index) => {
+    const floor = index + 1;
+    return createPoi(
+      `${basePoi.title}${floor}层`,
+      `${addressPrefix}${floor}层`,
+      Number(basePoi.latitude) + (floor - (maxFloor / 2)) * 0.00001,
+      Number(basePoi.longitude) + floor * 0.000005,
+      aliases
+    );
+  });
+}
+
+function expandCampusPois() {
+  const eastCampus = CAMPUS_POI_MAP['东方红校区'];
+  const southCampus = CAMPUS_POI_MAP['城南校区'];
+
+  eastCampus.pois
+    .filter((poi) => /宿舍楼$/.test(poi.title))
+    .forEach((poi) => {
+      createDirectionalPoints(poi, poi.address, [poi.title.replace('宿舍楼', ''), `${poi.title}宿舍`]).forEach((item) => pushPoi(eastCampus, item));
+      createFloorPoints(poi, 6, poi.address, [poi.title]).forEach((item) => pushPoi(eastCampus, item));
+    });
+
+  eastCampus.pois
+    .filter((poi) => /(教学楼|图书馆|食堂|实验楼|行政楼|逸夫楼|综合楼|中心|体育馆|游泳馆)/.test(poi.title))
+    .forEach((poi) => {
+      createDirectionalPoints(poi, poi.address, [poi.title]).forEach((item) => pushPoi(eastCampus, item));
+      createFloorPoints(poi, /(图书馆|教学楼|实验楼|综合楼|逸夫楼)/.test(poi.title) ? 5 : 3, poi.address, [poi.title]).forEach((item) => pushPoi(eastCampus, item));
+    });
+
+  southCampus.pois
+    .filter((poi) => /(宿舍楼|公寓)/.test(poi.title))
+    .forEach((poi) => {
+      createDirectionalPoints(poi, poi.address, [poi.title]).forEach((item) => pushPoi(southCampus, item));
+      createFloorPoints(poi, 6, poi.address, [poi.title]).forEach((item) => pushPoi(southCampus, item));
+    });
+
+  southCampus.pois
+    .filter((poi) => /(教学楼|图书馆|食堂|实验楼|行政楼|操场|驿站|超市)/.test(poi.title))
+    .forEach((poi) => {
+      createDirectionalPoints(poi, poi.address, [poi.title]).forEach((item) => pushPoi(southCampus, item));
+      createFloorPoints(poi, /(教学楼|图书馆|实验楼)/.test(poi.title) ? 5 : 3, poi.address, [poi.title]).forEach((item) => pushPoi(southCampus, item));
+    });
+
+  [
+    createPoi('主教学楼A栋201教室', '东方红校区主教学楼A栋2层201教室', 28.19083, 112.87014, ['A201', 'A栋201']),
+    createPoi('主教学楼A栋301教室', '东方红校区主教学楼A栋3层301教室', 28.19085, 112.87016, ['A301', 'A栋301']),
+    createPoi('主教学楼B栋101教室', '东方红校区主教学楼B栋1层101教室', 28.19106, 112.87127, ['B101', 'B栋101']),
+    createPoi('主教学楼B栋401教室', '东方红校区主教学楼B栋4层401教室', 28.19110, 112.87131, ['B401', 'B栋401']),
+    createPoi('主教学楼C栋阶梯教室', '东方红校区主教学楼C栋阶梯教室', 28.19060, 112.87195, ['C栋阶梯教室']),
+    createPoi('主教学楼D栋辅导员办公室', '东方红校区主教学楼D栋办公室', 28.19013, 112.87137, ['D栋办公室']),
+    createPoi('6栋宿舍楼东侧门厅', '东方红校区学生宿舍6栋东侧门厅', 28.18791, 112.87118, ['6栋东门']),
+    createPoi('6栋宿舍楼西侧门厅', '东方红校区学生宿舍6栋西侧门厅', 28.18788, 112.87082, ['6栋西门']),
+    createPoi('1栋宿舍楼楼下快递柜', '东方红校区学生宿舍1栋楼下快递柜', 28.18812, 112.87223, ['1栋快递柜']),
+    createPoi('第二食堂二楼', '东方红校区第二食堂二层', 28.18815, 112.87047, ['二食堂二楼']),
+    createPoi('第三食堂入口', '东方红校区第三食堂正门', 28.18762, 112.86995, ['三食堂门口']),
+    createPoi('城南校区教学楼A栋201教室', '城南校区教学楼A栋2层201教室', 28.17903, 112.96155, ['城南A201']),
+    createPoi('城南校区教学楼B栋301教室', '城南校区教学楼B栋3层301教室', 28.17934, 112.96184, ['城南B301']),
+    createPoi('城南校区第一宿舍楼门厅', '城南校区学生公寓1栋门厅', 28.17753, 112.96208, ['城南1栋门厅']),
+    createPoi('城南校区快递驿站取件口', '城南校区快递驿站取件口', 28.17819, 112.96058, ['城南驿站取件口'])
+  ].forEach((poi) => pushPoi(/城南/.test(poi.title) ? southCampus : eastCampus, poi));
+}
+
+expandCampusPois();
+
 function normalizeText(value) {
   return String(value || '')
     .trim()
@@ -166,14 +259,14 @@ function getNearestPoi(location, campus) {
   const nearest = profile.pois
     .map((poi) => ({ poi, distanceMeters: calcDistanceMeters(location, poi) }))
     .sort((left, right) => left.distanceMeters - right.distanceMeters)[0];
-  if (!nearest || nearest.distanceMeters > 120) {
+  if (!nearest || nearest.distanceMeters > 180) {
     return null;
   }
   return nearest;
 }
 
 function scorePoi(poi, keyword) {
-  const target = `${poi.title} ${poi.address}`.toLowerCase();
+  const target = `${poi.title} ${poi.address} ${(poi.aliases || []).join(' ')}`.toLowerCase();
   if (!keyword) {
     return 0;
   }

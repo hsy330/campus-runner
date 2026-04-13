@@ -42,6 +42,53 @@ const NAV_ITEMS = [
   { key: 'appeals', label: '申诉处理', icon: '&#9872;' }
 ];
 
+function TrendLineChart({ points = [] }) {
+  if (!points.length) {
+    return <p className="empty-state">暂无成交趋势数据</p>;
+  }
+
+  const width = 560;
+  const height = 180;
+  const padding = 18;
+  const maxAmount = Math.max(...points.map((item) => Number(item.amount || 0)), 1);
+  const step = points.length > 1 ? (width - padding * 2) / (points.length - 1) : 0;
+
+  const coords = points.map((item, index) => {
+    const x = padding + index * step;
+    const ratio = Number(item.amount || 0) / maxAmount;
+    const y = height - padding - ratio * (height - padding * 2);
+    return { x, y, label: item.label, amount: item.amount };
+  });
+
+  const polyline = coords.map((point) => `${point.x},${point.y}`).join(' ');
+
+  return (
+    <div className="trend-chart">
+      <svg viewBox={`0 0 ${width} ${height}`} className="trend-chart__svg" role="img" aria-label="近七日成交趋势">
+        <polyline
+          fill="none"
+          stroke="#2563eb"
+          strokeWidth="3"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          points={polyline}
+        />
+        {coords.map((point) => (
+          <g key={point.label}>
+            <circle cx={point.x} cy={point.y} r="4" fill="#0f766e" />
+            <text x={point.x} y={height - 4} textAnchor="middle" className="trend-chart__label">{point.label}</text>
+          </g>
+        ))}
+      </svg>
+      <div className="trend-chart__legend">
+        {points.map((point) => (
+          <span key={point.date}>{point.label} {formatAmount(point.amount)} 积分</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ═══════════════ Admin Login ═══════════════ */
 export function AdminLoginPage() {
   const [username, setUsername] = useState('');
@@ -222,6 +269,7 @@ function OverviewPanel({ token }) {
             <h3><BarChart3 size={18} /> 近 7 日成交趋势</h3>
             <span className="subtle">均单价 {formatAmount(stats.averageOrderAmount)} 积分</span>
           </div>
+          <TrendLineChart points={stats.recentTurnover || []} />
           <div className="admin-bar-list">
             {(stats.recentTurnover || []).map((item) => (
               <div key={item.date} className="admin-bar-item">
@@ -829,7 +877,11 @@ function AppealsPanel({ token }) {
       .catch(() => {});
   }
 
-  useEffect(() => { load(); }, [token]);
+  useEffect(() => {
+    load();
+    const timer = setInterval(load, 15000);
+    return () => clearInterval(timer);
+  }, [token]);
 
   async function handleAction(id, action) {
     if (!confirm(action === 'resolved' ? '确定通过该申诉？' : '确定驳回该申诉？')) return;
@@ -877,7 +929,12 @@ function AppealsPanel({ token }) {
   if (!appeals) return <div className="page-loading">加载中...</div>;
 
   return (
-    <div className="admin-table-wrap">
+    <>
+      <div className="admin-toolbar">
+        <span className="admin-toolbar-info">共 {appeals.length} 条申诉工单</span>
+        <button className="btn-primary btn-sm" onClick={load}>刷新申诉工单</button>
+      </div>
+      <div className="admin-table-wrap">
       <table className="admin-table">
         <thead>
           <tr>
@@ -902,8 +959,16 @@ function AppealsPanel({ token }) {
               <td>{a.reason}</td>
               <td className="admin-td-detail">{a.detail}</td>
               <td>
-                <span className={`admin-badge ${a.status === 'pending' ? 'admin-badge-yellow' : a.status === 'resolved' ? 'admin-badge-green' : 'admin-badge-red'}`}>
-                  {a.status === 'pending' ? '待处理' : a.status === 'resolved' ? '已处理' : '已驳回'}
+                <span className={`admin-badge ${
+                  a.status === 'pending'
+                    ? 'admin-badge-yellow'
+                    : a.status === 'resolved'
+                      ? 'admin-badge-green'
+                      : a.status === 'cancelled'
+                        ? 'admin-badge-gray'
+                        : 'admin-badge-red'
+                }`}>
+                  {a.status === 'pending' ? '待处理' : a.status === 'resolved' ? '已处理' : a.status === 'cancelled' ? '已取消' : '已驳回'}
                 </span>
               </td>
               <td className="admin-td-time">{new Date(a.createdAt).toLocaleString()}</td>
@@ -959,6 +1024,7 @@ function AppealsPanel({ token }) {
           {appeals.length === 0 && <tr><td colSpan={9} className="admin-table-empty">暂无申诉</td></tr>}
         </tbody>
       </table>
-    </div>
+      </div>
+    </>
   );
 }

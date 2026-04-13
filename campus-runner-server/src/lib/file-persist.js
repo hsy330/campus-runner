@@ -1,4 +1,4 @@
-import { writeFile, readFile, mkdir } from 'fs/promises';
+import { writeFile, readFile, mkdir, rename, unlink } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -7,6 +7,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DATA_DIR = path.resolve(__dirname, '../../data');
 const SNAPSHOT_FILE = path.join(DATA_DIR, 'db-snapshot.json');
+const SNAPSHOT_TEMP_FILE = path.join(DATA_DIR, 'db-snapshot.json.tmp');
+let saveQueue = Promise.resolve();
 
 function getCircularReplacer() {
   const seen = new WeakSet();
@@ -20,15 +22,25 @@ function getCircularReplacer() {
 }
 
 export async function saveSnapshot(db) {
-  try {
+  saveQueue = saveQueue.then(async () => {
     if (!existsSync(DATA_DIR)) {
       await mkdir(DATA_DIR, { recursive: true });
     }
     const data = JSON.stringify(db, getCircularReplacer(), 2);
-    await writeFile(SNAPSHOT_FILE, data, 'utf-8');
-  } catch (err) {
+    await writeFile(SNAPSHOT_TEMP_FILE, data, 'utf-8');
+    await rename(SNAPSHOT_TEMP_FILE, SNAPSHOT_FILE);
+  }).catch(async (err) => {
+    try {
+      if (existsSync(SNAPSHOT_TEMP_FILE)) {
+        await unlink(SNAPSHOT_TEMP_FILE);
+      }
+    } catch {
+      // ignore cleanup error
+    }
     console.error('[persist] Save snapshot error:', err.message);
-  }
+  });
+
+  return saveQueue;
 }
 
 export async function loadSnapshot() {

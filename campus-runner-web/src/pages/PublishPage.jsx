@@ -103,7 +103,7 @@ export function PublishPage() {
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [searchKeyword, user?.campus]);
+  }, [searchKeyword, user?.campus, myLocation, pickupLoc, deliveryLoc]);
 
   useEffect(() => {
     if (!pickupLoc || !deliveryLoc) {

@@ -83,6 +83,10 @@ export function createAppeal(token, taskId, data) {
   return request(`/tasks/${taskId}/appeal`, { method: 'POST', token, data });
 }
 
+export function cancelAppeal(token, taskId) {
+  return request(`/tasks/${taskId}/appeal/cancel`, { method: 'POST', token });
+}
+
 export function rechargeWallet(token, amount) {
   return request('/wallet/recharge', { method: 'POST', token, data: { amount } });
 }

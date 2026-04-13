@@ -2,6 +2,7 @@ import express from 'express';
 
 import {
   acceptTask,
+  cancelTaskAppeal,
   cancelTask,
   createTaskAppeal,
   createTaskReview,
@@ -102,6 +103,16 @@ router.post('/tasks/:id/appeal', async (req, res, next) => {
     const user = await requireUser(req);
     const data = await createTaskAppeal(user.id, req.params.id, req.body || {});
     res.status(201).json({ data, message: '申诉已提交' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/tasks/:id/appeal/cancel', async (req, res, next) => {
+  try {
+    const user = await requireUser(req);
+    const data = await cancelTaskAppeal(user.id, req.params.id);
+    res.json({ data, message: '申诉已取消' });
   } catch (error) {
     next(error);
   }
